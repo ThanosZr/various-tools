@@ -31,8 +31,8 @@ try{
  let visible=await viewer.locator('.page').first().boundingBox();if(visible.y+visible.height>730){await viewer.mouse.wheel(0,300);await viewer.waitForTimeout(150);visible=await viewer.locator('.page').first().boundingBox();}
  await viewer.mouse.move(visible.x+visible.width,visible.y+visible.height);await viewer.mouse.up();await panel.waitForFunction(()=>Number(document.getElementById('height').value)>900);
  await fill('width','660');await fill('height','940');await fill('gap','16');await click('applyGeometry');await settled();await viewer.bringToFront();
- await click('measureGap');await settled();await viewer.mouse.wheel(0,700);await viewer.waitForTimeout(200);
- const second=await viewer.locator('.page').nth(1).boundingBox();if(second.y<80||second.y>700){await viewer.mouse.wheel(0,second.y-170);await viewer.waitForTimeout(200);}
+ await click('measureGap');await settled();await viewer.bringToFront();await viewer.mouse.move(500,500);await viewer.mouse.wheel(0,700);await viewer.waitForTimeout(200);console.log('After wheel:',await viewer.evaluate(()=>({scroll:scrollY,height:document.scrollingElement.scrollHeight,client:document.scrollingElement.clientHeight}))); 
+ const second=await viewer.locator('.page').nth(1).boundingBox();if(second.y<80||second.y>700){await viewer.mouse.move(500,500);await viewer.mouse.wheel(0,second.y-170);await viewer.waitForTimeout(200);}
  const next=await viewer.locator('.page').nth(1).boundingBox();
  const pointInfo=await viewer.evaluate(p=>{const h=document.querySelector('[data-readercapture]'),s=h?.shadowRoot,e=document.elementFromPoint(p.x,p.y),inner=s?.elementFromPoint(p.x,p.y),frame=s?.querySelector('.frame');return {scroll:scrollY,point:p,element:e?.tagName,inner:inner?.className,help:s?.querySelector('.tools p')?.textContent,frame:frame?.getBoundingClientRect().toJSON()};},{x:next.x+5,y:next.y});
  await viewer.mouse.click(next.x+5,next.y);await viewer.waitForTimeout(150);console.log('Visual spacing:',await panel.locator('#spacing').textContent(),'diagnostics:',JSON.stringify(pointInfo),'status:',await panel.locator('#status').textContent());
