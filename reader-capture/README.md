@@ -1,4 +1,6 @@
-# ReaderCapture 3.0.0
+# ReaderCapture 0.2
+
+Προηγούμενη αρίθμηση: 3.0.0. Η αλλαγή ονόματος διατηρεί τη λειτουργία αυτής της έκδοσης.
 
 Ενιαία λήψη online εγγράφων και χωρισμός σε σελίδες μετά την καταγραφή. Λευκό περιβάλλον, Calibri και τοπική επεξεργασία.
 
@@ -26,6 +28,8 @@
 
 ## Εγκατάσταση / αναβάθμιση
 
+[Λήψη ZIP από το GitHub](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.2.zip). Αποσυμπίεσε το αρχείο και επίλεξε τον υποφάκελο **reader-capture/extension**.
+
 Στο chrome://extensions ή edge://extensions ενεργοποίησε Developer mode και φόρτωσε τον φάκελο **extension** με Load unpacked. Για αναβάθμιση αντικατάστησε τα περιεχόμενα του ίδιου φακέλου extension, πάτησε Reload στην επέκταση, κλείσε το παλιό πάνελ και **ανανέωσε επίσης το έγγραφο**.
 
 Η παλιά συλλογή και τα αντίγραφα .rcap παραμένουν συμβατά. Οι ενιαίες λήψεις αποθηκεύονται ξεχωριστά στον browser και ανοίγουν ξανά από το **Άνοιγμα διαχωρισμού**. Η διακοπή διατηρεί τα ολοκληρωμένα τμήματα ως μερική λήψη. Πριν απεγκατάσταση, εξήγαγε ό,τι θέλεις να διατηρήσεις.
@@ -50,7 +54,7 @@
 
 ## Εκδόσεις
 
-Η προηγούμενη έκδοση διατηρείται στο branch [reader-capture/v2.0.0](https://github.com/ThanosZr/various-tools/tree/reader-capture/v2.0.0). Η νέα έκδοση βρίσκεται στο [reader-capture/v3.0.0](https://github.com/ThanosZr/various-tools/tree/reader-capture/v3.0.0).
+Η προηγούμενη έκδοση διατηρείται στο branch [reader-capture/v0.1](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.1). Η νέα έκδοση βρίσκεται στο [reader-capture/v0.2](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.2).
 
 ## Για ανάπτυξη
 

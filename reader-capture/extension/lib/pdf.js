@@ -29,7 +29,7 @@ export async function makePDF(pages, {size='original', title='ReaderCapture'} = 
     object(id+2, `<< /Length ${ascii(content).length} >>\nstream\n${content}endstream`);
   }
   const infoId=3+pages.length*3;
-  object(infoId, `<< /Title ${pdfString(title)} /Producer (ReaderCapture 3.0) >>`);
+  object(infoId, `<< /Title ${pdfString(title)} /Producer (ReaderCapture 0.2) >>`);
   const start=length;
   append(`xref\n0 ${infoId+1}\n0000000000 65535 f \n`);
   for(let id=1;id<=infoId;id++) append(`${String(offsets[id]).padStart(10,'0')} 00000 n \n`);

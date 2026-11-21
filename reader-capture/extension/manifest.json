@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ReaderCapture — Σελίδες σε PDF",
-  "version": "3.0.0",
+  "version": "0.2.0",
+  "version_name": "0.2",
   "minimum_chrome_version": "116",
   "description": "Ενιαία λήψη επιλεγμένου εύρους με αποκλεισμό σταθερών μπαρών. Χωρισμός σε σελίδες σε ξεχωριστό παράθυρο, PDF και μεγάλο PNG.",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage", "downloads", "unlimitedStorage"],
