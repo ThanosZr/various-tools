@@ -58,7 +58,7 @@
 - `npm install` και `npm run test:all`: έλεγχοι DOM, πάνελ, αποθήκευσης, pixels, PDF/ZIP και νέας σταδιακής λήψης.
 - `npm run test:browser`: πραγματικός Chromium / Playwright με εγκατεστημένο Chromium.
 
-Δες **VALIDATION.md** για εκτελεσμένους ελέγχους και τα όριά τους.
+Πέρασαν **43 δοκιμές** και πραγματικός έλεγχος Chromium με δύο επίμονες μπάρες, ακριβή σύγκριση pixels και εξαγωγές, στο [GitHub Actions](https://github.com/ThanosZr/various-tools/actions/runs/44885783276). Δες **VALIDATION.md** για την έκταση των ελέγχων και τα όριά τους.
 
 ## Εκδόσεις
 

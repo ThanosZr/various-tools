@@ -22,7 +22,7 @@
 
 Το tests/browser.mjs εκτελεί πραγματικό Chromium μέσω GitHub Actions. Περιλαμβάνει σχεδίαση, edge scrolling, πραγματικό Chrome zoom, νέο τρόπο ανά σελίδα, έλεγχο μικρών βημάτων, δύο επίμονες μπάρες (ανώνυμο fixed wrapper και absolute στοιχείο που ακολουθεί την κύλιση μέσω script), ταύτιση pixels με καθαρό browser-rendered έγγραφο, popup και εξαγωγές PDF / PNG χωρίς κύλιση της αρχικής καρτέλας.
 
-Η έκβαση του νέου browser run καταγράφεται στο αντίστοιχο commit / workflow. Η ύπαρξη του σεναρίου από μόνη της δεν αποτελεί επιτυχία ελέγχου.
+Ο πραγματικός έλεγχος Chromium **πέρασε** μαζί με τις 43 δοκιμές Node στο [GitHub Actions](https://github.com/ThanosZr/various-tools/actions/runs/44885783276), για τον κώδικα του commit `dbf6db20574c94d730241cf9cbcf76b938e5c4f0`. Η δοκιμή ταύτισης pixels, τα μικρά βήματα και οι εξαγωγές ολοκληρώθηκαν χωρίς page errors.
 
 ## Όρια επαλήθευσης
 
