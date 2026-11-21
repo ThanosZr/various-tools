@@ -24,6 +24,7 @@
     <section class="batch-section">
       <div class="section-title"><span class="step">2</span><h2>Ενιαία εικόνα</h2></div>
       <label>Τι θα κρατήσει<select id="rangeMode"><option value="selection">Ολόκληρη τη σχεδιασμένη περιοχή</option><option value="end">Από την περιοχή μέχρι το τέλος της κύλισης</option><option value="repeat">Περιοχή σελίδας × το πλήθος που όρισα</option></select></label>
+      <div id="repeatRange" class="fields two" hidden><label>Από θέση<input id="scanFirst" type="number" min="1" value="1"></label><label>Πλήθος σελίδων<input id="scanCount" type="number" min="1" max="1000" value="10"></label></div>
       <label class="checkbox"><input id="autoExcludeBars" type="checkbox" checked> Αυτόματος αποκλεισμός σταθερών μπαρών</label>
       <button id="pickBar" class="subtle">Σημείωσε μπάρα που δεν αναγνωρίζεται</button>
       <p class="hint">Πρώτα φορτώνει το εύρος. Μετά ενώνει τα ακάλυπτα τμήματα σε μία εικόνα, χωρίς να ενσωματώνει τις μπάρες. Ο χωρισμός γίνεται μετά, σε ξεχωριστό παράθυρο.</p>

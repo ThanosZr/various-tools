@@ -9,7 +9,7 @@ import {captureScan} from './lib/scan-capture.js';
 import {getScan,listScans} from './lib/scan-store.js';
 
 const $=id=>document.getElementById(id);
-const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars'];
+const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars','scanFirst','scanCount'];
 const bridge=new PageBridge();
 let pages=[],target=null,busy=false,stopped=false,lastCapture=0,urls=[],selected=new Set(),saveTimer,selectionState=null,batchRunning=false,paused=false,lastScanId=null;
 const mb=n=>(n/1024/1024).toFixed(2)+' MB';
@@ -128,7 +128,7 @@ async function openSplitter(scanId){
   const url=chrome.runtime.getURL('splitter.html')+'?scan='+encodeURIComponent(id);await chrome.windows.create({url,type:'popup',width:1180,height:860});
 }
 async function startScan(){
-  const t=await ensure(),operationOpts={...opts(),mode:'manual'},first=Number($('startPage').value)-1,count=Number($('pageCount').value);
+  const t=await ensure(),operationOpts={...opts(),mode:'manual'},first=Number($('scanFirst').value)-1,count=Number($('scanCount').value);
   if(operationOpts.rangeMode==='repeat'&&(!Number.isInteger(first)||first<0||!Number.isInteger(count)||count<1||count>1000))throw new Error('Δώσε έγκυρη αρχή και πλήθος για το επαναλαμβανόμενο εύρος.');
   $('scanProgress').hidden=false;$('scanProgress').value=0;
   const scan=await captureScan({opts:operationOpts,first:operationOpts.rangeMode==='repeat'?first:0,count:operationOpts.rangeMode==='repeat'?count:1,command:(op,extra={})=>command(op,{opts:operationOpts,...extra},t),screenshot:()=>screenshot(t),checkStop,
@@ -297,7 +297,7 @@ $('findPdf').addEventListener('click',()=>task(async()=>{
   status(links.length?`Βρέθηκαν ${links.length} σύνδεσμοι PDF. Άνοιξε τον σύνδεσμο και χρησιμοποίησε τη λήψη του browser.`:'Δεν βρέθηκαν εμφανείς σύνδεσμοι .pdf στη σελίδα.');
 }));
 $('preset').addEventListener('change',()=>{const values={reading:[1600,88],small:[1100,72],original:[0,95]}[$('preset').value];if(values){$('maxWidth').value=values[0];$('quality').value=values[1];$('qualityLabel').textContent=values[1]+'%';saveSettings();}});
-for(const id of settingsIds)$(id)?.addEventListener('input',()=>{if(id==='quality')$('qualityLabel').textContent=$('quality').value+'%';if(['maxWidth','quality'].includes(id))$('preset').value='custom';if(id==='batchMode')$('pageCountLabel').firstChild.textContent=$('batchMode').value==='end'?'Ανώτατο όριο':'Πλήθος σελίδων';if(['edgeSpeed','lockRatio'].includes(id)&&target)command('configure').catch(()=>{});clearTimeout(saveTimer);saveTimer=setTimeout(saveSettings,250);});
+for(const id of settingsIds)$(id)?.addEventListener('input',()=>{if(id==='quality')$('qualityLabel').textContent=$('quality').value+'%';if(['maxWidth','quality'].includes(id))$('preset').value='custom';if(id==='batchMode')$('pageCountLabel').firstChild.textContent=$('batchMode').value==='end'?'Ανώτατο όριο':'Πλήθος σελίδων';if(id==='rangeMode')$('repeatRange').hidden=$('rangeMode').value!=='repeat';if(['edgeSpeed','lockRatio'].includes(id)&&target)command('configure').catch(()=>{});clearTimeout(saveTimer);saveTimer=setTimeout(saveSettings,250);});
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='session'&&changes.target){if(busy&&target?.id!==changes.target.newValue?.id)stopped=true;target=changes.target.newValue;source();}});
 chrome.runtime.onMessage.addListener((m,sender)=>{
   if(m.type==='scan-pages-added')allPages().then(p=>{pages=p.sort((a,b)=>a.order-b.order);selected.clear();renderList();}).catch(reportError);
@@ -313,6 +313,7 @@ async function init(){
   const [{settings={},settingsVersion,lastScanId:last},{target:t},stored]=await Promise.all([chrome.storage.local.get(['settings','settingsVersion','lastScanId']),chrome.storage.session.get('target'),allPages()]);lastScanId=last||null;
   for(const id of settingsIds)if(settings[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!settings[id];else $(id).value=settings[id];}
   if(settingsVersion!==3)$('mode').value='manual';
+  $('repeatRange').hidden=$('rangeMode').value!=='repeat';
   $('qualityLabel').textContent=$('quality').value+'%';target=t||null;pages=stored.sort((a,b)=>a.order-b.order);source();await renderList();
   if(target){try{await ensure();const s=await command('selection');if(s)showBounds(s);}catch{}}
   if(pages.length)status(`Ανακτήθηκαν ${pages.length} σελίδες της συλλογής σου.`);

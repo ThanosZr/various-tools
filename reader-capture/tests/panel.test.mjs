@@ -64,7 +64,7 @@ test('panel initializes, Draw really starts selection, N-page collection persist
   assert.equal(v.scroller.scrollTop,900);assert.equal(local.settingsVersion,3);
   await click('pdf');assert.ok(downloads[0].filename.endsWith('.pdf'));assert.match(Buffer.from(await downloads[0].blob.arrayBuffer()).toString('latin1'),/\/Count 3/);
   await click('images');assert.ok(downloads[1].filename.endsWith('.zip'));assert.equal(new DataView(await downloads[1].blob.arrayBuffer()).getUint32(0,true),0x04034b50);
-  $('rangeMode').value='repeat';await click('scanStart');assert.equal($('errorDetails').hidden,true);assert.equal(popups.length,1);assert.equal(popups[0].type,'popup');
+  $('rangeMode').value='repeat';$('scanCount').value='3';await click('scanStart');assert.equal($('errorDetails').hidden,true);assert.equal(popups.length,1);assert.equal(popups[0].type,'popup');
   const scan=[...stores.scans.values()][0];assert.equal(scan.status,'complete');assert.equal(scan.savedHeight,2868);assert.equal(scan.width,660);assert.ok(scan.tiles.length>1);assert.equal(v.scroller.scrollTop,900);
   v.dispose();
 });
