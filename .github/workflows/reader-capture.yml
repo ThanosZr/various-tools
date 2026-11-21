@@ -1,0 +1,24 @@
+name: ReaderCapture checks
+on:
+  push:
+    branches: ['reader-capture/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: reader-capture
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm install --no-audit --no-fund
+      - run: npm run test:all
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

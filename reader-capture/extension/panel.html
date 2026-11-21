@@ -2,13 +2,13 @@
 <html lang="el">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ReaderCapture</title><link rel="stylesheet" href="panel.css"></head>
 <body>
-  <header><div class="brand"><span class="logo">R</span><div><h1>ReaderCapture</h1><p>Σχεδίασε μία. Κράτησε όσες θέλεις.</p></div><span class="local">V2 · LOCAL</span></div></header>
+  <header><div class="brand"><span class="logo">R</span><div><h1>ReaderCapture</h1><p>Ενιαία λήψη. Χωρισμός μετά.</p></div><span class="local">V3 · LOCAL</span></div></header>
   <main>
     <section class="connection"><div class="eyebrow">ΕΓΓΡΑΦΟ ΣΤΟΝ BROWSER</div><p id="source">Πάτησε το εικονίδιο της επέκτασης στο έγγραφο.</p><button id="connect" class="subtle">Σύνδεση με ενεργή καρτέλα</button></section>
     <div id="status" role="status" aria-live="polite">Σχεδίασε την πρώτη σελίδα πάνω στο έγγραφο.</div>
     <details id="errorDetails" hidden><summary>Λεπτομέρειες σφάλματος</summary><pre id="errorText"></pre><button id="copyError">Αντιγραφή σφάλματος</button></details>
     <section>
-      <div class="section-title"><span class="step">1</span><h2>Σχεδίασε μία σελίδα</h2><button id="help" class="text-button">Οδηγίες ↗</button></div>
+      <div class="section-title"><span class="step">1</span><h2>Σχεδίασε το εύρος λήψης</h2><button id="help" class="text-button">Οδηγίες ↗</button></div>
       <button id="draw" class="primary big">▧ Σχεδίαση περιοχής</button>
       <p class="hint">Κόκκινο όσο σέρνεις → πράσινο όταν αφήσεις. Κοντά στο άκρο κυλά μόνο του. Μετά αλλάζεις μέγεθος από τις λαβές.</p>
       <div class="buttons"><button id="detect">Αυτόματος εντοπισμός</button><button id="pick">Επιλογή στοιχείου</button></div>
@@ -21,14 +21,25 @@
       <button id="applyGeometry">Εφαρμογή διαστάσεων</button><label>Ταχύτητα στο άκρο (px/s)<input id="edgeSpeed" type="range" min="200" max="1800" step="50" value="950"></label></details>
       <details><summary>Κεφαλίδες και χρόνος φόρτωσης</summary><div class="fields"><label>Κεφαλίδα (px)<input id="topInset" type="number" value="0" min="0" max="2000"></label><label>Κάτω μπάρα (px)<input id="bottomInset" type="number" value="0" min="0" max="2000"></label><label>Αναμονή (ms)<input id="wait" type="number" value="450" min="80" max="3000" step="50"></label></div><p class="hint">Τα περιθώρια μετρώνται από τις άκρες της οθόνης. Για σταθερή κεφαλίδα 70 px, όρισε 70. Αν εμφανίζονται κενά, αύξησε την αναμονή.</p></details>
     </section>
+    <section class="batch-section">
+      <div class="section-title"><span class="step">2</span><h2>Ενιαία εικόνα</h2></div>
+      <label>Τι θα κρατήσει<select id="rangeMode"><option value="selection">Ολόκληρη τη σχεδιασμένη περιοχή</option><option value="end">Από την περιοχή μέχρι το τέλος της κύλισης</option><option value="repeat">Περιοχή σελίδας × το πλήθος που όρισα</option></select></label>
+      <label class="checkbox"><input id="autoExcludeBars" type="checkbox" checked> Αυτόματος αποκλεισμός σταθερών μπαρών</label>
+      <button id="pickBar" class="subtle">Σημείωσε μπάρα που δεν αναγνωρίζεται</button>
+      <p class="hint">Πρώτα φορτώνει το εύρος. Μετά ενώνει τα ακάλυπτα τμήματα σε μία εικόνα, χωρίς να ενσωματώνει τις μπάρες. Ο χωρισμός γίνεται μετά, σε ξεχωριστό παράθυρο.</p>
+      <button id="scanStart" class="primary big">Λήψη ενιαίας εικόνας</button>
+      <div class="buttons"><button id="scanCancel" class="danger" disabled>Διακοπή λήψης</button><button id="openSplitter">Άνοιγμα διαχωρισμού</button></div>
+      <progress id="scanProgress" max="1" value="0" hidden></progress><p id="scanStats" class="hint">Η εικόνα αποθηκεύεται τοπικά στην ανάλυση προβολής.</p>
+    </section>
+    <details class="legacy"><summary>Προαιρετικά: πρότυπο σελίδας και προηγούμενος τρόπος λήψης</summary>
     <section>
-      <div class="section-title"><span class="step">2</span><h2>Όρισε την επόμενη αρχή</h2></div>
+      <div class="section-title"><h2>Πρότυπο: επόμενη αρχή</h2></div>
       <button id="measureGap" class="big">↧ Κλικ στην αρχή της επόμενης σελίδας</button>
       <p id="spacing" class="hint">Κύλα το έγγραφο όσο χρειάζεται και κάνε κλικ στο ίδιο σημείο της επόμενης σελίδας. Το βήμα υπολογίζεται από μόνο του.</p>
       <div class="buttons"><button id="previewFirst">Πρώτη περιοχή</button><button id="previewNext">Δοκιμή επόμενης</button></div>
     </section>
     <section class="batch-section">
-      <div class="section-title"><span class="step">3</span><h2>Αυτόματη λήψη</h2></div>
+      <div class="section-title"><h2>Πλήθος και προηγούμενη λήψη</h2></div>
       <label>Πότε σταματά<select id="batchMode"><option value="count">Μετά από συγκεκριμένο πλήθος σελίδων</option><option value="end">Στο τέλος του εγγράφου, με ανώτατο όριο</option></select></label>
       <div class="fields two"><label>Από θέση<input id="startPage" type="number" min="1" max="10000" value="1"></label><label id="pageCountLabel">Πλήθος σελίδων<input id="pageCount" type="number" min="1" max="1000" value="10"></label></div>
       <label>Μετά τη λήψη<select id="autoExport"><option value="none">Κράτησε τη συλλογή για έλεγχο</option><option value="pdf">Εξαγωγή PDF</option><option value="images">Εξαγωγή εικόνων σε ZIP</option></select></label>
@@ -41,6 +52,7 @@
       <div class="buttons"><button id="previous">← Προηγούμενη</button><button id="next">Επόμενη →</button></div>
       <button id="visible" class="subtle">Μόνο ορατό τμήμα</button><p class="hint">Alt+Shift+S: μία σελίδα. Τα ορατά τμήματα μπορούν να ενωθούν από τη συλλογή.</p></details>
     </section>
+    </details>
     <section>
       <div class="section-title"><span class="step">4</span><h2>Συλλογή <span id="count" class="badge">0</span></h2><button id="new" class="text-button">Νέα συλλογή</button></div>
       <label>Όνομα αρχείου<input id="title" value="Το έγγραφό μου" maxlength="120"></label>

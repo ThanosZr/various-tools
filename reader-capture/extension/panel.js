@@ -5,19 +5,21 @@ import {allPages,putPage,deletePage,clearPages,replacePages} from './lib/db.js';
 import {canvasBlob,renderPage,thumb,hashBlob,blobDataURL} from './lib/image.js';
 import {PageBridge,friendlyError} from './lib/bridge.js';
 import {runBatch} from './lib/batch.js';
+import {captureScan} from './lib/scan-capture.js';
+import {getScan,listScans} from './lib/scan-store.js';
 
 const $=id=>document.getElementById(id);
-const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition'];
+const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars'];
 const bridge=new PageBridge();
-let pages=[],target=null,busy=false,stopped=false,lastCapture=0,urls=[],selected=new Set(),saveTimer,selectionState=null,batchRunning=false,paused=false;
+let pages=[],target=null,busy=false,stopped=false,lastCapture=0,urls=[],selected=new Set(),saveTimer,selectionState=null,batchRunning=false,paused=false,lastScanId=null;
 const mb=n=>(n/1024/1024).toFixed(2)+' MB';
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
-function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','wait'].map(id=>[id,$(id).value])),lockRatio:$('lockRatio').checked,edgeSpeed:Number($('edgeSpeed').value)};}
+function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','wait','rangeMode'].map(id=>[id,$(id).value])),lockRatio:$('lockRatio').checked,edgeSpeed:Number($('edgeSpeed').value),autoExcludeBars:$('autoExcludeBars').checked,returnPosition:$('returnPosition').checked};}
 function config(){return {maxWidth:Number($('maxWidth').value)||0,quality:Number($('quality').value)/100,grayscale:$('grayscale').checked};}
 function selectedPages(){return pages.filter(p=>!selected.size||selected.has(p.id));}
-async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:2});}catch(e){reportError(e);}}
+async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:3});}catch(e){reportError(e);}}
 function reportError(e){const partial=e.batch?` Κρατήθηκαν ${e.batch.added} σελίδες.`:'';status(friendlyError(e)+partial,true);$('errorDetails').hidden=false;$('errorText').textContent=`${e.code||'ERROR'}: ${e.message||e}\n${e.stack||''}`;}
-function setBusy(value){busy=value;for(const el of document.querySelectorAll('button,input,select'))el.disabled=value;$('cancel').disabled=!value;$('pause').disabled=!batchRunning;$('copyError').disabled=false;$('progress').hidden=!value;if(!value){$('progress').value=0;$('pause').disabled=true;}}
+function setBusy(value){busy=value;for(const el of document.querySelectorAll('button,input,select'))el.disabled=value;$('cancel').disabled=!value;$('scanCancel').disabled=!value;$('pause').disabled=!batchRunning;$('copyError').disabled=false;$('progress').hidden=!value;if(!value){$('progress').value=0;$('scanProgress').hidden=true;$('pause').disabled=true;}}
 async function task(fn){if(busy)return;stopped=false;try{setBusy(true);$('errorDetails').hidden=true;await fn();}catch(e){reportError(e);}finally{setBusy(false);}}
 function checkStop(){if(stopped)throw Object.assign(new Error('Η ενέργεια διακόπηκε. Οι ολοκληρωμένες σελίδες διατηρήθηκαν.'),{code:'STOPPED'});}
 function source(){ $('source').textContent=target?`${target.title||'Έγγραφο'}\n${target.url||''}`:'Πάτησε το εικονίδιο της επέκτασης στο έγγραφο.'; }
@@ -118,6 +120,23 @@ async function startBatch(){
   }finally{
     if(started)await command('end-run',{restore},t).catch(()=>{});batchRunning=false;paused=false;$('pause').textContent='Παύση';$('pause').disabled=true;
   }
+}
+async function openSplitter(scanId){
+  let id=scanId||lastScanId;const current=id?await getScan(id):null;
+  if(!current?.savedHeight){const available=(await listScans()).filter(s=>s.savedHeight>0).sort((a,b)=>b.created.localeCompare(a.created));id=available[0]?.id;}
+  if(!id)throw new Error('Κράτησε πρώτα μία ενιαία εικόνα.');
+  const url=chrome.runtime.getURL('splitter.html')+'?scan='+encodeURIComponent(id);await chrome.windows.create({url,type:'popup',width:1180,height:860});
+}
+async function startScan(){
+  const t=await ensure(),operationOpts={...opts(),mode:'manual'},first=Number($('startPage').value)-1,count=Number($('pageCount').value);
+  if(operationOpts.rangeMode==='repeat'&&(!Number.isInteger(first)||first<0||!Number.isInteger(count)||count<1||count>1000))throw new Error('Δώσε έγκυρη αρχή και πλήθος για το επαναλαμβανόμενο εύρος.');
+  $('scanProgress').hidden=false;$('scanProgress').value=0;
+  const scan=await captureScan({opts:operationOpts,first:operationOpts.rangeMode==='repeat'?first:0,count:operationOpts.rangeMode==='repeat'?count:1,command:(op,extra={})=>command(op,{opts:operationOpts,...extra},t),screenshot:()=>screenshot(t),checkStop,
+    onSaved:s=>{lastScanId=s.id;chrome.storage.local.set({lastScanId:s.id}).catch(reportError);},
+    onProgress:p=>{const prefix=p.stage==='preload'?'Φόρτωση ολόκληρου του εύρους':'Ενιαία καταγραφή χωρίς τις μπάρες';status(prefix+' · '+Math.round(p.fraction*100)+'%');$('scanProgress').value=p.stage==='preload'?p.fraction*.25:.25+p.fraction*.75;$('scanStats').textContent=p.stage==='preload'?`Προφόρτωση · ${p.steps} θέσεις`:`${p.tiles} τμήματα · ${p.savedHeight} σειρές εικόνας`;}
+  });
+  $('scanStats').textContent=`Ενιαία εικόνα ${scan.width} × ${scan.savedHeight} px · ${scan.tiles.length} τμήματα.`;
+  status('Η ενιαία εικόνα αποθηκεύτηκε. Ανοίγει ο διαχωρισμός σε σελίδες.');await openSplitter(scan.id);
 }
 async function reorder(index,delta){const other=index+delta;if(other<0||other>=pages.length)return;[pages[index],pages[other]]=[pages[other],pages[index]];pages.forEach((p,i)=>p.order=i);await replacePages(pages);await renderList();}
 async function renderList(){
@@ -244,6 +263,10 @@ $('capture').addEventListener('click',()=>task(()=>capturePage(false)));
 $('visible').addEventListener('click',()=>task(()=>capturePage(true)));
 $('cancel').addEventListener('click',()=>{stopped=true;paused=false;status('Διακοπή και διατήρηση των ολοκληρωμένων σελίδων…');});
 $('batchStart').addEventListener('click',()=>task(startBatch));
+$('scanStart').addEventListener('click',()=>task(startScan));
+$('scanCancel').addEventListener('click',()=>{stopped=true;status('Διακοπή. Τα ήδη αποθηκευμένα τμήματα διατηρούνται.');});
+$('openSplitter').addEventListener('click',()=>task(()=>openSplitter()));
+$('pickBar').addEventListener('click',()=>task(async()=>{await ensure();await command('pick',{kind:'bar'});status('Κάνε κλικ στη σταθερή μπάρα πάνω στην ιστοσελίδα.');}));
 $('pause').addEventListener('click',()=>{if(!batchRunning)return;paused=!paused;$('pause').textContent=paused?'Συνέχεια':'Παύση';status(paused?'Θα γίνει παύση μετά την τρέχουσα σελίδα.':'Η λήψη συνεχίζεται.');});
 $('measureGap').addEventListener('click',()=>task(async()=>{await ensure();await command('measure-gap');status('Κύλα στην επόμενη σελίδα και κάνε κλικ στην αρχή της. Η απόσταση μετριέται μαζί με την κύλιση.');}));
 $('applyGeometry').addEventListener('click',()=>task(async()=>{await ensure();showBounds(await command('set-geometry',{values:{width:Number($('width').value),height:Number($('height').value),gap:Number($('gap').value)}}));await saveSettings();status('Εφαρμόστηκαν οι διαστάσεις.');}));
@@ -277,17 +300,19 @@ $('preset').addEventListener('change',()=>{const values={reading:[1600,88],small
 for(const id of settingsIds)$(id)?.addEventListener('input',()=>{if(id==='quality')$('qualityLabel').textContent=$('quality').value+'%';if(['maxWidth','quality'].includes(id))$('preset').value='custom';if(id==='batchMode')$('pageCountLabel').firstChild.textContent=$('batchMode').value==='end'?'Ανώτατο όριο':'Πλήθος σελίδων';if(['edgeSpeed','lockRatio'].includes(id)&&target)command('configure').catch(()=>{});clearTimeout(saveTimer);saveTimer=setTimeout(saveSettings,250);});
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='session'&&changes.target){if(busy&&target?.id!==changes.target.newValue?.id)stopped=true;target=changes.target.newValue;source();}});
 chrome.runtime.onMessage.addListener((m,sender)=>{
+  if(m.type==='scan-pages-added')allPages().then(p=>{pages=p.sort((a,b)=>a.order-b.order);selected.clear();renderList();}).catch(reportError);
+  if(m.type==='bar-selected'&&sender.tab?.id===target?.id)status('Σημειώθηκε η μπάρα. Οι γραμμές πίσω της θα ληφθούν από άλλη θέση κύλισης.');
   if(['bounds-selected','bounds-changed','spacing-selected'].includes(m.type)&&sender.tab?.id===target?.id){showBounds(m.data);saveSettings();if(!busy&&m.type!=='bounds-changed')status(m.type==='spacing-selected'?'Ορίστηκε το βήμα. Διάλεξε πλήθος σελίδων και ξεκίνα.':'Η περιοχή έγινε πράσινη. Ρύθμισέ την και όρισε την επόμενη αρχή.');}
   if(m.type==='capture-cancelled'){stopped=true;paused=false;}
   if(m.type==='selection-cancelled')status('Η επιλογή περιοχής ακυρώθηκε.');
   if(m.type==='shortcut-capture'&&!busy)task(()=>capturePage(false));
 });
-window.addEventListener('beforeunload',()=>{if(busy&&target)command(batchRunning?'end-run':'end',{},target).catch(()=>{});});
+window.addEventListener('beforeunload',()=>{if(busy&&target){command('end-strip',{},target).catch(()=>{});command(batchRunning?'end-run':'end',{},target).catch(()=>{});}});
 async function init(){
   setBusy(true);
-  const [{settings={},settingsVersion},{target:t},stored]=await Promise.all([chrome.storage.local.get(['settings','settingsVersion']),chrome.storage.session.get('target'),allPages()]);
+  const [{settings={},settingsVersion,lastScanId:last},{target:t},stored]=await Promise.all([chrome.storage.local.get(['settings','settingsVersion','lastScanId']),chrome.storage.session.get('target'),allPages()]);lastScanId=last||null;
   for(const id of settingsIds)if(settings[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!settings[id];else $(id).value=settings[id];}
-  if(settingsVersion!==2)$('mode').value='manual';
+  if(settingsVersion!==3)$('mode').value='manual';
   $('qualityLabel').textContent=$('quality').value+'%';target=t||null;pages=stored.sort((a,b)=>a.order-b.order);source();await renderList();
   if(target){try{await ensure();const s=await command('selection');if(s)showBounds(s);}catch{}}
   if(pages.length)status(`Ανακτήθηκαν ${pages.length} σελίδες της συλλογής σου.`);

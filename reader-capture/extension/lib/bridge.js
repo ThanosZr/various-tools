@@ -1,4 +1,4 @@
-export const VERSION='2.0.0';
+export const VERSION='3.0.0';
 export function friendlyError(error){
   const text=error?.message||String(error);
   if(/context invalidated|Extension context/i.test(text))return 'Η επέκταση ανανεώθηκε. Κλείσε το παλιό πάνελ, ανανέωσε το έγγραφο και πάτησε ξανά το εικονίδιο ReaderCapture.';

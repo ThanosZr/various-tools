@@ -1,9 +1,10 @@
 (() => {
   'use strict';
-  const VERSION='2.0.0', SLOT='__readerCaptureController';
+  const VERSION='3.0.0', SLOT='__readerCaptureController';
   try { globalThis[SLOT]?.dispose(); } catch {}
   const removers=[];
-  let model=null,view=null,mode='idle',gesture=null,gapPoint=null,capture=null,run=null,raf=0,lastTick=0,pickerOptions={},notifyTimer=0;
+  let model=null,view=null,mode='idle',gesture=null,gapPoint=null,capture=null,run=null,strip=null,raf=0,lastTick=0,pickerOptions={},notifyTimer=0;
+  const customBars=new Set();
   const box=r=>({x:r.x,y:r.y,width:r.width,height:r.height});
   const docRoot=()=>document.scrollingElement||document.documentElement;
   const isDoc=r=>r===docRoot();
@@ -16,6 +17,31 @@
   function rootFor(el){for(let p=el;p&&p!==document.body&&p!==document.documentElement;p=p.parentElement)if(/auto|scroll/.test(getComputedStyle(p).overflowY)&&p.scrollHeight>p.clientHeight+8)return p;return docRoot();}
   function origin(root){if(isDoc(root))return {x:0,y:0};const r=root.getBoundingClientRect();return {x:r.x+root.clientLeft,y:r.y+root.clientTop};}
   function clipFor(root){let c={x:0,y:0,width:innerWidth,height:innerHeight};if(!isDoc(root)){const o=origin(root);c=intersect(c,{...o,width:root.clientWidth,height:root.clientHeight});for(let p=root.parentElement;p&&p!==document.body;p=p.parentElement)if(/hidden|auto|scroll|clip/.test(getComputedStyle(p).overflow))c=intersect(c,box(p.getBoundingClientRect()));}return c;}
+  function bandsFor(t,opts){
+    const c=clipFor(t.root),top=Math.max(c.y,Number(opts.topInset)||0),bottom=Math.min(c.y+c.height,innerHeight-(Number(opts.bottomInset)||0)),base={x:c.x,y:top,width:c.width,height:Math.max(0,bottom-top)};
+    let bands=[base];const elements=new Set(customBars);
+    if(opts.autoExcludeBars!==false)for(const el of document.querySelectorAll('header,nav,[role="toolbar"],[role="banner"],[class*="toolbar"],[class*="header"],[class*="sticky"],[class*="fixed"],[class*="bar"]'))elements.add(el);
+    for(const el of elements){
+      if(!el.isConnected||el.closest?.('[data-readercapture]'))continue;const style=getComputedStyle(el),r=box(el.getBoundingClientRect());
+      if(!customBars.has(el)&&!['fixed','sticky'].includes(style.position))continue;
+      if(style.display==='none'||style.visibility==='hidden'||r.height<3||r.height>Math.min(250,innerHeight*.45))continue;
+      const overlap=Math.max(0,Math.min(r.x+r.width,t.rect.x+t.rect.width)-Math.max(r.x,t.rect.x));if(overlap<Math.min(240,t.rect.width*.4))continue;
+      const next=[];for(const b of bands){const lo=Math.max(b.y,r.y),hi=Math.min(b.y+b.height,r.y+r.height);if(hi<=lo){next.push(b);continue;}if(lo>b.y)next.push({...b,height:lo-b.y});if(hi<b.y+b.height)next.push({...b,y:hi,height:b.y+b.height-hi});}bands=next;
+    }
+    return bands.filter(b=>b.height>=60).sort((a,b)=>a.y-b.y);
+  }
+  async function moveToCovered(covered,opts){
+    for(let attempt=0;attempt<4;attempt++){
+      const m=currentCapture(),s=capture,t=s.target,root=t.root,bands=bandsFor({...t,rect:m.rect},s.opts),max=Math.max(0,root.scrollHeight-root.clientHeight),line=m.rect.y+covered;
+      const plans=bands.map(b=>{const pad=Math.min(24,b.height/8),scrollTop=clamp(root.scrollTop+line-b.y-pad,0,max),y=line-(scrollTop-root.scrollTop);return {band:b,scrollTop,y,fresh:Math.min(b.y+b.height-y,t.rect.height-covered)};}).filter(p=>p.y>=p.band.y-.5&&p.y<p.band.y+p.band.height-.5&&p.fresh>.1).sort((a,b)=>b.fresh-a.fresh);
+      if(!plans.length)throw fail('Η επόμενη γραμμή καλύπτεται από μπάρα. Διόρθωσε τα περιθώρια ή τα όρια του εύρους.','OCCLUDED');
+      const plan=plans[0];scroll(root,root.scrollLeft,plan.scrollTop);await wait(clamp(Number(opts.wait)||450,80,3000));
+      const rect={...s.rect,x:s.rect.x-(root.scrollLeft-s.left),y:s.rect.y-(root.scrollTop-s.top)},row=rect.y+covered;
+      const band=bandsFor({...t,rect},s.opts).find(b=>row>=b.y-.5&&row<b.y+b.height-.5);
+      if(band){s.band=band;return currentCapture();}
+    }
+    throw fail('Η μπάρα αλλάζει θέση κατά τη λήψη. Αύξησε την αναμονή.','LAYOUT_CHANGED');
+  }
   function localRect(rect,root){const o=origin(root);return {...rect,x:rect.x-o.x+root.scrollLeft,y:rect.y-o.y+root.scrollTop};}
   function screenRect(rect,root){const o=origin(root);return {...rect,x:o.x+rect.x-root.scrollLeft,y:o.y+rect.y-root.scrollTop};}
   function point(e,root){const o=origin(root);return {x:e.clientX-o.x+root.scrollLeft,y:e.clientY-o.y+root.scrollTop};}
@@ -108,8 +134,9 @@
   function place(el,r){Object.assign(el.style,{left:r.x+'px',top:r.y+'px',width:r.width+'px',height:r.height+'px'});}
   function repaint(){
     if(!view)return;const v=view;
-    v.surface.className='surface'+(['draw','element','gap'].includes(mode)?' active':'');v.frame.style.pointerEvents=mode==='edit'?'auto':'none';v.gap.hidden=!model||mode==='gap'||!!gesture;v.done.hidden=!model||mode==='draw'||mode==='element'||!!gesture;v.tools.style.opacity=gesture?'.45':'1';v.tools.style.pointerEvents=gesture?'none':'auto';
+    v.surface.className='surface'+(['draw','element','gap','bar'].includes(mode)?' active':'');v.frame.style.pointerEvents=mode==='edit'?'auto':'none';v.gap.hidden=!model||mode==='gap'||!!gesture;v.done.hidden=!model||mode==='draw'||mode==='element'||!!gesture;v.tools.style.opacity=gesture?'.45':'1';v.tools.style.pointerEvents=gesture?'none':'auto';
     v.help.textContent=mode==='draw'?'Σύρε για μία σελίδα. Στο άκρο κυλά μόνη της. Esc: ακύρωση.':mode==='element'?'Δείξε μία σελίδα και κάνε κλικ.':mode==='gap'?'Κύλα στην επόμενη σελίδα και κάνε κλικ στην αρχή της.':'Πράσινη περιοχή: μετακίνηση και αλλαγή μεγέθους. Μετά όρισε την επόμενη αρχή.';
+    if(mode==='bar')v.help.textContent='Κάνε κλικ στη σταθερή μπάρα που πρέπει να μένει έξω από τις λήψεις.';
     const currentIndex=model&&mode==='edit'?(gesture?.index??indexAtView()):0;
     let r=null;if(gesture&&gesture.type!=='element')r=screenRect(gesture.rect,gesture.root);else if(gesture?.type==='element')r=gesture.rect;else if(model){try{const g=geometry();r={...g.rect,y:g.rect.y+currentIndex*g.step};}catch{}}
     v.frame.hidden=!r;v.badge.hidden=!r;
@@ -117,10 +144,11 @@
     v.ghost.hidden=!model||!model.calibrated||mode==='draw'||mode==='element';if(!v.ghost.hidden){const g=geometry();place(v.ghost,{...g.rect,y:g.rect.y+(currentIndex+1)*g.step});}
     v.line.hidden=mode!=='gap'||!gapPoint;if(!v.line.hidden){v.line.style.top=gapPoint.clientY+'px';const g=geometry(),p=point(gapPoint,model.root),delta=p.y-g.local.y;v.line.className='line'+(delta>=g.local.height-2?' valid':'');v.help.textContent=`Κλικ στην επόμενη αρχή · βήμα ${Math.round(delta)} px · διάκενο ${Math.round(delta-g.local.height)} px`;}
   }
-  function startDraw(kind='manual',options={}){if(capture||run)throw fail('Σταμάτησε πρώτα τη λήψη.');pickerOptions=options;buildView();mode=kind==='element'?'element':'draw';gesture=null;gapPoint=null;repaint();return {ok:true};}
+  function startDraw(kind='manual',options={}){if(capture||run||strip)throw fail('Σταμάτησε πρώτα τη λήψη.');pickerOptions=options;buildView();mode=kind==='element'?'element':kind==='bar'?'bar':'draw';gesture=null;gapPoint=null;repaint();return {ok:true};}
   function startGap(){if(!model)throw fail('Σχεδίασε πρώτα την πρώτη σελίδα.');buildView();mode='gap';gesture=null;gapPoint=null;repaint();return summary();}
   function down(e){
     if(e.button!==undefined&&e.button!==0)return;consume(e);
+    if(mode==='bar'){let chosen=null;for(let p=under(e.clientX,e.clientY);p&&p!==document.body;p=p.parentElement){const r=p.getBoundingClientRect();if(r.height<=250&&r.height>=5&&r.width>150){chosen=p;if(['fixed','sticky'].includes(getComputedStyle(p).position))break;}}if(!chosen){view.help.textContent='Δεν βρέθηκε στενή μπάρα σε αυτό το σημείο.';return;}customBars.add(chosen);mode='edit';repaint();send('bar-selected',{count:customBars.size});return;}
     if(mode==='gap'){const g=geometry(),p=point(e,model.root),step=p.y-g.local.y;if(step<g.local.height-2){view.help.textContent='Η επόμενη αρχή πρέπει να βρίσκεται μετά την πράσινη περιοχή. Κύλα χαμηλότερα.';return;}const ref=referenceFor(under(e.clientX,e.clientY),g.rect);model.nextRef=ref&&ref!==model.ref?ref:null;model.nextOffsetY=model.nextRef?(p.y-localRect(box(model.nextRef.getBoundingClientRect()),model.root).y)/g.scale:0;model.fixedGap=null;model.step=step/g.scale;model.calibrated=true;mode='edit';gapPoint=null;repaint();notify('spacing-selected');return;}
     if(mode==='element'){const el=referenceFor(under(e.clientX,e.clientY),{width:100,height:100})||candidates()[0]?.el;if(el){const r=box(el.getBoundingClientRect());createModel(r,rootFor(el),el);mode='edit';inferSpacing(el);repaint();notify('bounds-selected');}return;}
     if(mode!=='draw')return;
@@ -152,18 +180,25 @@
   function viewChanged(){if(view&&!capture&&!run){repaint();if(model)notify();}}
   function rememberPosition(root){const g=model&&root===model.root?geometry():null;return {root,left:root.scrollLeft,top:root.scrollTop,anchor:g?.local.y,anchorX:g?.local.x,scale:g?.scale||1};}
   function restorePosition(position){if(!position?.root.isConnected)return;let left=position.left,top=position.top;if(model&&position.root===model.root&&position.anchor!==undefined){const g=geometry(),factor=g.scale/position.scale;top=g.local.y+(position.top-position.anchor)*factor;left=g.local.x+(position.left-position.anchorX)*factor;}scroll(position.root,left,top);}
-  function guardInput(e){if(!capture)return;if((e.ctrlKey||e.metaKey)&&(e.type==='wheel'||['Control','Meta','+','-','=','0'].includes(e.key)))return;capture.cancelled=true;if(run)run.cancelled=true;if(e.type==='keydown'&&e.key==='Escape')send('capture-cancelled');}
+  function guardInput(e){if(!capture&&!strip)return;if((e.ctrlKey||e.metaKey)&&(e.type==='wheel'||['Control','Meta','+','-','=','0'].includes(e.key)))return;if(capture)capture.cancelled=true;if(strip)strip.cancelled=true;if(run)run.cancelled=true;if(e.type==='keydown'&&e.key==='Escape')send('capture-cancelled');}
   function currentCapture(){
     if(!capture)throw fail('Η λήψη έχει λήξει.','CAPTURE_EXPIRED');const s=capture,t=s.target;
-    if(s.cancelled||run?.cancelled)throw fail('Η λήψη διακόπηκε από κίνηση ή πλήκτρο στο έγγραφο.','USER_INTERRUPTED');
+    if(s.cancelled||run?.cancelled||strip?.cancelled)throw fail('Η λήψη διακόπηκε από κίνηση ή πλήκτρο στο έγγραφο.','USER_INTERRUPTED');
     if(innerWidth!==s.vw||innerHeight!==s.vh||Math.abs(devicePixelRatio-s.dpr)>.001)throw fail('Άλλαξε το zoom ή το παράθυρο. Επαναπροσδιορισμός της ίδιας σελίδας…','VIEWPORT_CHANGED');
     const rect={...s.rect,x:s.rect.x-(t.root.scrollLeft-s.left),y:s.rect.y-(t.root.scrollTop-s.top)};
     if(!t.root.isConnected)throw fail('Ο viewer άλλαξε κατά τη λήψη.','VIEWER_CHANGED');
     if(t.el){const actual=t.el.getBoundingClientRect();if(Math.abs(actual.width-rect.width)>2||Math.abs(actual.height-rect.height)>2||Math.abs(actual.y-rect.y)>3)throw fail('Η διάταξη άλλαξε κατά τη λήψη.','LAYOUT_CHANGED');}
     if(t.kind==='manual'&&Math.abs(geometry().scale-t.scale)>.002)throw fail('Η σελίδα άλλαξε μέγεθος. Επανάληψη λήψης…','VIEWPORT_CHANGED');
-    const c=clipFor(t.root),upper=Math.max(c.y,Number(s.opts.topInset)||0),lower=Math.min(c.y+c.height,innerHeight-(Number(s.opts.bottomInset)||0));return {...info({...t,rect}),clip:{x:c.x,y:upper,width:c.width,height:Math.max(0,lower-upper)}};
+    const bands=bandsFor({...t,rect},s.opts);if(!bands.length)throw fail('Δεν υπάρχει αρκετό ακάλυπτο ύψος για λήψη.','OCCLUDED');const clip=s.band?bands.find(b=>Math.abs(b.y-s.band.y)<1&&Math.abs(b.height-s.band.height)<1):bands[0];if(!clip)throw fail('Μετακινήθηκε η σταθερή μπάρα.','LAYOUT_CHANGED');return {...info({...t,rect}),clip};
   }
-  function endCapture(restore=true){if(!capture)return {ok:true};const s=capture;capture=null;clearTimeout(s.timer);if(restore)restorePosition(s.position);if(!run)hideOverlay(false);return {ok:true};}
+  function endCapture(restore=true){if(!capture)return {ok:true};const s=capture;capture=null;clearTimeout(s.timer);if(restore)restorePosition(s.position);if(!run&&!strip)hideOverlay(false);return {ok:true};}
+  function stripTarget(){
+    if(!strip||strip.cancelled)throw fail('Η ενιαία λήψη διακόπηκε.','USER_INTERRUPTED');const g=geometry();let local={...g.local};
+    if(strip.opts.rangeMode==='repeat'){local.y+=strip.first*g.step;local.height=g.local.height+(strip.count-1)*g.step;}
+    if(strip.opts.rangeMode==='end')local.height=Math.max(0,model.root.scrollHeight-local.y);
+    return {root:model.root,local,rect:screenRect(local,model.root),kind:'manual',scale:g.scale,label:'Ενιαία λήψη'};
+  }
+  function endStrip(restore=true){endCapture(false);const s=strip;strip=null;if(restore&&s)restorePosition(s.position);hideOverlay(false);repaint();return {ok:true};}
   async function prepare(index,opts){
     let previous=-1,stable=0;
     for(let n=0;n<6;n++){const t=manualTarget(index),root=t.root,c=clipFor(root),top=Math.max(c.y,Number(opts.topInset)||0)+24;scroll(root,root.scrollLeft,root.scrollTop+t.rect.y-top);await wait(clamp(Number(opts.wait)||450,80,3000));const current=manualTarget(index),bottom=current.local.y+current.local.height;if(bottom<=root.scrollHeight+2)return info(current);if(root.scrollHeight===previous)stable++;else stable=0;previous=root.scrollHeight;if(stable>=2)break;}
@@ -173,6 +208,10 @@
     const {op,opts={}}=message;
     if(op==='ping')return {version:VERSION,selected:!!model};
     if(op==='configure'){pickerOptions={...pickerOptions,...opts};return {ok:true};}
+    if(op==='begin-strip'){if(!model)throw fail('Σχεδίασε το εύρος που θέλεις να κρατήσεις.','NO_SELECTION');endCapture();const first=Number(message.first)||0,count=Number(message.count)||1;if(!Number.isInteger(first)||first<0||!Number.isInteger(count)||count<1||count>1000)throw fail('Μη έγκυρο εύρος σελίδων.');if(opts.rangeMode==='repeat'&&!model.calibrated)throw fail('Για επανάληψη σελίδων όρισε την επόμενη αρχή.');strip={position:rememberPosition(model.root),opts,first,count,cancelled:false,lastHeight:0,stalled:0};hideOverlay(true);return {...info(stripTarget()),selection:summary()};}
+    if(op==='strip-preload'){const t=stripTarget(),root=t.root,c=clipFor(root);scroll(root,root.scrollLeft,root.scrollTop+t.rect.y+(Number(message.offset)||0)-c.y);await wait(clamp(Number(opts.wait)||450,80,3000));const fresh=stripTarget(),o=origin(root),visibleBottom=root.scrollTop+c.y+c.height-o.y,atBottom=root.scrollTop>=root.scrollHeight-root.clientHeight-2;if(atBottom&&root.scrollHeight===strip.lastHeight)strip.stalled++;else strip.stalled=0;strip.lastHeight=root.scrollHeight;const reached=visibleBottom>=fresh.local.y+fresh.local.height-1;return {...info(fresh),done:(strip.opts.rangeMode!=='end'&&reached)||strip.stalled>=2,nextOffset:Math.max((Number(message.offset)||0)+80,visibleBottom-fresh.local.y-40)};}
+    if(op==='strip-ready'){const t=stripTarget();t.local.height=Math.min(t.local.height,t.root.scrollHeight-t.local.y);if(t.local.height<1)throw fail('Το επιλεγμένο εύρος δεν υπάρχει.');t.rect=screenRect(t.local,t.root);capture={target:t,rect:{...t.rect},left:t.root.scrollLeft,top:t.root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts:strip.opts,cancelled:false,position:strip.position};return {...currentCapture(),selection:summary()};}
+    if(op==='end-strip')return endStrip(message.restore!==false);
     if(op==='pick')return startDraw(message.kind,opts);
     if(op==='measure-gap')return startGap();
     if(op==='set-geometry')return setGeometry(message.values||{});
@@ -187,7 +226,7 @@
     if(op==='prepare')return prepare(message.index,opts);
     if(op==='goto'){const m=await prepare(message.index,opts);repaint();return m;}
     if(op==='begin'){endCapture(!run);if(gesture)throw fail('Ολοκλήρωσε πρώτα τη σχεδίαση.');const t=getTarget(opts);if(run?.cancelled)throw fail('Η λήψη διακόπηκε.','USER_INTERRUPTED');capture={target:t,rect:{...t.rect},left:t.root.scrollLeft,top:t.root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts,cancelled:false,position:rememberPosition(t.root)};capture.timer=setTimeout(()=>endCapture(!run),120000);hideOverlay(true);return currentCapture();}
-    if(op==='move'){const s=capture,m=currentCapture();if(m.clip.height<80)throw fail('Η ορατή περιοχή είναι πολύ μικρή. Μείωσε τα περιθώρια.');scroll(s.target.root,s.target.root.scrollLeft,s.target.root.scrollTop+m.rect.y+message.covered-m.clip.y-24);await wait(clamp(Number(opts.wait)||450,80,3000));return currentCapture();}
+    if(op==='move'){if(capture)capture.band=null;return moveToCovered(message.covered,opts);}
     if(op==='metrics')return currentCapture();
     if(op==='end')return endCapture(message.restore!==false&&!run);
     if(op==='next'){
@@ -205,5 +244,5 @@
   for(const name of ['wheel','touchstart','pointerdown','keydown'])listen(document,name,guardInput,{capture:true,passive:true});
   listen(document,'keydown',e=>{if(e.key==='Escape'&&!capture){gesture=null;if(model){mode='edit';repaint();}else closeView();send('selection-cancelled');}},true);
   listen(document,'scroll',viewChanged,true);listen(window,'resize',viewChanged);if(window.visualViewport)listen(window.visualViewport,'resize',viewChanged);
-  globalThis[SLOT]={version:VERSION,dispose(){endCapture(!run);if(run)restorePosition(run.position);run=null;closeView();clearTimeout(notifyTimer);for(const off of removers)off();try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}};
+  globalThis[SLOT]={version:VERSION,dispose(){if(strip)endStrip();endCapture(!run);if(run)restorePosition(run.position);run=null;closeView();clearTimeout(notifyTimer);for(const off of removers)off();try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}};
 })();
