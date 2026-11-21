@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="el">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ReaderCapture</title><link rel="stylesheet" href="panel.css"></head>
+<body>
+  <header><div class="brand"><span class="logo">R</span><div><h1>ReaderCapture</h1><p>Σχεδίασε μία. Κράτησε όσες θέλεις.</p></div><span class="local">V2 · LOCAL</span></div></header>
+  <main>
+    <section class="connection"><div class="eyebrow">ΕΓΓΡΑΦΟ ΣΤΟΝ BROWSER</div><p id="source">Πάτησε το εικονίδιο της επέκτασης στο έγγραφο.</p><button id="connect" class="subtle">Σύνδεση με ενεργή καρτέλα</button></section>
+    <div id="status" role="status" aria-live="polite">Σχεδίασε την πρώτη σελίδα πάνω στο έγγραφο.</div>
+    <details id="errorDetails" hidden><summary>Λεπτομέρειες σφάλματος</summary><pre id="errorText"></pre><button id="copyError">Αντιγραφή σφάλματος</button></details>
+    <section>
+      <div class="section-title"><span class="step">1</span><h2>Σχεδίασε μία σελίδα</h2><button id="help" class="text-button">Οδηγίες ↗</button></div>
+      <button id="draw" class="primary big">▧ Σχεδίαση περιοχής</button>
+      <p class="hint">Κόκκινο όσο σέρνεις → πράσινο όταν αφήσεις. Κοντά στο άκρο κυλά μόνο του. Μετά αλλάζεις μέγεθος από τις λαβές.</p>
+      <div class="buttons"><button id="detect">Αυτόματος εντοπισμός</button><button id="pick">Επιλογή στοιχείου</button></div>
+      <div class="buttons"><button id="showOverlay" class="subtle">Εμφάνιση πλαισίου</button><button id="hideOverlay" class="subtle">Απόκρυψη</button></div>
+      <p id="bounds" class="hint">Η επιλογή ακολουθεί τη σελίδα στο zoom του Chrome.</p>
+      <label class="checkbox"><input id="lockRatio" type="checkbox" checked> Κλείδωμα αναλογιών στις γωνιακές λαβές</label>
+      <details><summary>Ακριβείς διαστάσεις και κύλιση</summary>
+      <label>Τρόπος εντοπισμού<select id="mode"><option value="auto">Αυτόματα / στοιχείο σελίδας</option><option value="manual">Δική μου περιοχή και επαναλαμβανόμενο ύψος</option></select></label>
+      <div class="fields"><label>Πλάτος (px)<input id="width" type="number" min="30" max="30000" value="700"></label><label>Ύψος (px)<input id="height" type="number" min="30" max="30000" value="990"></label><label>Διάκενο (px)<input id="gap" type="number" min="0" max="5000" value="16"></label></div>
+      <button id="applyGeometry">Εφαρμογή διαστάσεων</button><label>Ταχύτητα στο άκρο (px/s)<input id="edgeSpeed" type="range" min="200" max="1800" step="50" value="950"></label></details>
+      <details><summary>Κεφαλίδες και χρόνος φόρτωσης</summary><div class="fields"><label>Κεφαλίδα (px)<input id="topInset" type="number" value="0" min="0" max="2000"></label><label>Κάτω μπάρα (px)<input id="bottomInset" type="number" value="0" min="0" max="2000"></label><label>Αναμονή (ms)<input id="wait" type="number" value="450" min="80" max="3000" step="50"></label></div><p class="hint">Τα περιθώρια μετρώνται από τις άκρες της οθόνης. Για σταθερή κεφαλίδα 70 px, όρισε 70. Αν εμφανίζονται κενά, αύξησε την αναμονή.</p></details>
+    </section>
+    <section>
+      <div class="section-title"><span class="step">2</span><h2>Όρισε την επόμενη αρχή</h2></div>
+      <button id="measureGap" class="big">↧ Κλικ στην αρχή της επόμενης σελίδας</button>
+      <p id="spacing" class="hint">Κύλα το έγγραφο όσο χρειάζεται και κάνε κλικ στο ίδιο σημείο της επόμενης σελίδας. Το βήμα υπολογίζεται από μόνο του.</p>
+      <div class="buttons"><button id="previewFirst">Πρώτη περιοχή</button><button id="previewNext">Δοκιμή επόμενης</button></div>
+    </section>
+    <section class="batch-section">
+      <div class="section-title"><span class="step">3</span><h2>Αυτόματη λήψη</h2></div>
+      <label>Πότε σταματά<select id="batchMode"><option value="count">Μετά από συγκεκριμένο πλήθος σελίδων</option><option value="end">Στο τέλος του εγγράφου, με ανώτατο όριο</option></select></label>
+      <div class="fields two"><label>Από θέση<input id="startPage" type="number" min="1" max="10000" value="1"></label><label id="pageCountLabel">Πλήθος σελίδων<input id="pageCount" type="number" min="1" max="1000" value="10"></label></div>
+      <label>Μετά τη λήψη<select id="autoExport"><option value="none">Κράτησε τη συλλογή για έλεγχο</option><option value="pdf">Εξαγωγή PDF</option><option value="images">Εξαγωγή εικόνων σε ZIP</option></select></label>
+      <label class="checkbox"><input id="returnPosition" type="checkbox" checked> Επιστροφή στη θέση μου όταν τελειώσει</label>
+      <button id="batchStart" class="primary big">▶ Λήψη σελίδων</button>
+      <div class="buttons"><button id="pause" disabled>Παύση</button><button id="cancel" class="danger" disabled>Διακοπή</button></div>
+      <progress id="progress" max="1" value="0" hidden></progress><p id="runStats" class="hint">Οι ολοκληρωμένες σελίδες αποθηκεύονται μία μία.</p>
+      <details><summary>Μία σελίδα / χειροκίνητα τμήματα</summary>
+      <button id="capture" class="primary big">＋ Κράτησε αυτή τη σελίδα</button>
+      <div class="buttons"><button id="previous">← Προηγούμενη</button><button id="next">Επόμενη →</button></div>
+      <button id="visible" class="subtle">Μόνο ορατό τμήμα</button><p class="hint">Alt+Shift+S: μία σελίδα. Τα ορατά τμήματα μπορούν να ενωθούν από τη συλλογή.</p></details>
+    </section>
+    <section>
+      <div class="section-title"><span class="step">4</span><h2>Συλλογή <span id="count" class="badge">0</span></h2><button id="new" class="text-button">Νέα συλλογή</button></div>
+      <label>Όνομα αρχείου<input id="title" value="Το έγγραφό μου" maxlength="120"></label>
+      <div class="collection-tools"><span id="total" class="hint">0 MB</span><button id="selectAll" class="text-button">Επιλογή όλων</button><button id="join" class="text-button">Ένωση τμημάτων</button></div>
+      <label class="inline">Επικάλυψη ένωσης (px)<input id="overlap" type="number" min="0" max="5000" value="0"></label>
+      <div id="pages" class="pages"><p class="empty">Οι σελίδες που κρατάς θα εμφανίζονται εδώ. Η συλλογή αποθηκεύεται τοπικά.</p></div>
+      <div class="buttons"><button id="backup" class="subtle">Αντίγραφο συλλογής</button><button id="restore" class="subtle">Φόρτωση συλλογής</button></div><input type="file" id="restoreFile" accept=".rcap,application/json" hidden>
+    </section>
+    <section>
+      <div class="section-title"><span class="step">5</span><h2>Εξαγωγή και συμπίεση</h2></div>
+      <label>Προφίλ<select id="preset"><option value="reading">Καθαρό κείμενο · 1600 px / 88%</option><option value="small">Μικρό αρχείο · 1100 px / 72%</option><option value="original">Ανάλυση λήψης · 95%</option><option value="custom">Δικές μου ρυθμίσεις</option></select></label>
+      <div class="fields two"><label>Μέγ. πλάτος (0 = πλήρες)<input id="maxWidth" type="number" min="0" max="30000" value="1600"></label><label>Ποιότητα JPEG <span id="qualityLabel">88%</span><input id="quality" type="range" min="35" max="100" value="88"></label></div>
+      <div class="fields two"><label>Χαρτί PDF<select id="paper"><option value="original">Αναλογία σελίδας</option><option value="a4">A4</option><option value="letter">Letter</option></select></label><label>Εικόνες<select id="imageFormat"><option value="image/jpeg">JPEG · μικρό αρχείο</option><option value="image/png">PNG · χωρίς απώλειες</option></select></label></div>
+      <label class="checkbox"><input type="checkbox" id="grayscale"> Κλίμακα του γκρι</label>
+      <div class="buttons"><button id="estimate" class="subtle">Υπολογισμός μεγέθους PDF</button></div><p id="estimateText" class="hint">Η συμπίεση εφαρμόζεται στην εξαγωγή. Οι αρχικές λήψεις διατηρούνται.</p>
+      <div class="buttons"><button id="pdf" class="primary">Εξαγωγή PDF</button><button id="images">Εικόνες σε ZIP</button></div>
+      <p class="hint">Εξάγονται όλες οι σελίδες, ή μόνο όσες έχεις επιλέξει. Το PDF περιέχει εικόνες, χωρίς OCR.</p>
+      <details><summary>Υπάρχει ήδη κανονικό PDF;</summary><p class="hint">Εντοπισμός υπαρχόντων συνδέσμων .pdf στη σελίδα.</p><button id="findPdf">Έλεγχος συνδέσμων</button><div id="pdfLinks"></div></details>
+    </section>
+    <footer>Τοπική επεξεργασία · Η λήψη ξεκινά όταν το επιλέξεις<br>Αποθηκεύει ό,τι εμφανίζεται στον browser. Δεν ξεκλειδώνει μη διαθέσιμες σελίδες.</footer>
+  </main>
+  <dialog id="editor"><div class="editor-head"><h2>Προεπισκόπηση και περικοπή</h2><button id="closeEditor">Κλείσιμο</button></div><p class="hint">Σύρε πάνω στην εικόνα για περικοπή. Η επιλογή αποθηκεύεται χωρίς να διαγράφεται η αρχική εικόνα.</p><div id="editStage"><img id="editImage" alt="Προεπισκόπηση σελίδας"><div id="cropBox" hidden></div></div><div class="buttons"><button id="rotate">Περιστροφή 90°</button><button id="resetCrop">Επαναφορά</button><button id="saveCrop" class="primary">Αποθήκευση</button></div></dialog>
+  <script type="module" src="panel.js"></script>
+</body></html>

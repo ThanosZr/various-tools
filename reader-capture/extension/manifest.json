@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "ReaderCapture — Σελίδες σε PDF",
+  "version": "2.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Οπτική επιλογή σελίδας, κύλιση στο άκρο, μέτρηση επόμενης αρχής, διατήρηση αναλογιών στο zoom, λήψη Ν σελίδων και PDF.",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage", "downloads", "unlimitedStorage"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "Άνοιγμα ReaderCapture", "default_icon": {"16":"icons/icon-16.png","32":"icons/icon-32.png"}},
+  "icons": {"16":"icons/icon-16.png","48":"icons/icon-48.png","128":"icons/icon-128.png"},
+  "side_panel": {"default_path": "panel.html"},
+  "commands": {
+    "capture-page": {"suggested_key": {"default": "Alt+Shift+S"}, "description": "Αποθήκευση τρέχουσας σελίδας"},
+    "_execute_action": {"suggested_key": {"default": "Alt+Shift+R"}}
+  },
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'"}
+}
