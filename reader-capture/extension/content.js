@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION='2.0.0', SLOT='__readerCaptureController';
+  const VERSION='0.1.0', SLOT='__readerCaptureController';
   try { globalThis[SLOT]?.dispose(); } catch {}
   const removers=[];
   let model=null,view=null,mode='idle',gesture=null,gapPoint=null,capture=null,run=null,raf=0,lastTick=0,pickerOptions={},notifyTimer=0;

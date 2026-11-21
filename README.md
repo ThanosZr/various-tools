@@ -4,12 +4,15 @@ A collection of practical tools and utilities for documents, automation, enginee
 
 ## Tools
 
-| Tool | Description | Version |
-| --- | --- | --- |
-| [ReaderCapture](https://github.com/ThanosZr/various-tools/tree/reader-capture/v2.0.0/reader-capture) | Chrome/Edge extension for selecting, capturing and exporting online document pages. | [v2.0.0](https://github.com/ThanosZr/various-tools/tree/reader-capture/v2.0.0) |
+| Tool | Version | Description | Download |
+| --- | --- | --- | --- |
+| ReaderCapture | [0.2](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.2/reader-capture) | Continuous document capture with persistent toolbar exclusion, a separate page splitter, PDF and full-resolution PNG export. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.2.zip) |
+| ReaderCapture archive | [0.1](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.1/reader-capture) | Previous page-by-page capture and visual calibration. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.1.zip) |
 
-## Repository structure
+## Organization
 
-Each tool has its own directory with source code, installation instructions, tests and validation notes. Version snapshots are stored on branches named `<tool>/v<version>`, for example `reader-capture/v2.0.0`.
+Each tool has its own directory, installation instructions, source code, tests and validation notes. Each version is stored on a branch named `<tool>/v<version>`.
 
-The `main` branch contains this catalog. See the corresponding version branch for the complete tool.
+The `main` branch contains the catalog. Open the corresponding version branch for the complete tool. After extracting a ReaderCapture branch ZIP, load its **reader-capture/extension** directory at **chrome://extensions** using **Load unpacked**.
+
+ReaderCapture 0.1 and 0.2 were previously numbered 2.0.0 and 3.0.0. This numbering change preserves their respective functionality. The extension uses numeric versions 0.1.0 and 0.2.0 internally and displays 0.1 and 0.2.

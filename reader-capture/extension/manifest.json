@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ReaderCapture — Σελίδες σε PDF",
-  "version": "2.0.0",
+  "version": "0.1.0",
+  "version_name": "0.1",
   "minimum_chrome_version": "116",
   "description": "Οπτική επιλογή σελίδας, κύλιση στο άκρο, μέτρηση επόμενης αρχής, διατήρηση αναλογιών στο zoom, λήψη Ν σελίδων και PDF.",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage", "downloads", "unlimitedStorage"],
