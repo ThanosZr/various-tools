@@ -127,7 +127,7 @@
     tools.append(help,gap,done,close);shadow.append(style,surface,ghost,frame,line,badge,tools);document.documentElement.append(host);
     const handles={nw:['0%','0%','nwse-resize'],n:['50%','0%','ns-resize'],ne:['100%','0%','nesw-resize'],e:['100%','50%','ew-resize'],se:['100%','100%','nwse-resize'],s:['50%','100%','ns-resize'],sw:['0%','100%','nesw-resize'],w:['0%','50%','ew-resize']};
     for(const [name,[left,top,cursor]]of Object.entries(handles)){const h=document.createElement('span');h.className='handle';h.dataset.handle=name;Object.assign(h.style,{left,top,cursor,transform:'translate(-50%,-50%)'});frame.append(h);h.addEventListener('pointerdown',e=>beginAdjust(e,name));}
-    surface.addEventListener('pointerdown',down);frame.addEventListener('pointerdown',e=>{if(e.target===frame)beginAdjust(e,'move');});shadow.addEventListener('wheel',wheel,{passive:false});
+    surface.addEventListener('pointerdown',down);frame.addEventListener('pointerdown',e=>{if(e.target===frame)beginAdjust(e,'move');});
     view={host,shadow,surface,frame,ghost,badge,line,tools,help,gap,done};return view;
   }
   function consume(e){e.preventDefault();e.stopPropagation();}
@@ -175,7 +175,7 @@
     let factor=0;if(p.clientX>=c.x-20&&p.clientX<=c.x+c.width+20){if(p.clientY>c.y+c.height-margin)factor=clamp((p.clientY-(c.y+c.height-margin))/margin,0,1);else if(p.clientY<c.y+margin)factor=-clamp((c.y+margin-p.clientY)/margin,0,1);}
     const speed=clamp(Number(pickerOptions.edgeSpeed)||950,100,2400);if(factor){scroll(g.root,g.root.scrollLeft,g.root.scrollTop+factor*speed*dt);updateGesture();}raf=requestAnimationFrame(edgeTick);
   }
-  function wheel(e){if(!view||e.ctrlKey||e.metaKey)return;const root=gesture?.root||model?.root||rootFor(under(e.clientX,e.clientY));consume(e);const multiplier=e.deltaMode===1?20:e.deltaMode===2?clipFor(root).height:1;scroll(root,root.scrollLeft+(e.deltaX||0)*multiplier,root.scrollTop+(e.deltaY||0)*multiplier);updateGesture();repaint();}
+  function wheel(e){if(!view||e.ctrlKey||e.metaKey)return;const root=gesture?.root||model?.root||rootFor(under(e.clientX,e.clientY));if(e.cancelable===false&&isDoc(root)){requestAnimationFrame(()=>{updateGesture();repaint();});return;}consume(e);const multiplier=e.deltaMode===1?20:e.deltaMode===2?clipFor(root).height:1;scroll(root,root.scrollLeft+(e.deltaX||0)*multiplier,root.scrollTop+(e.deltaY||0)*multiplier);updateGesture();repaint();}
   function inferSpacing(el){const rect=el.getBoundingClientRect(),next=candidates().filter(c=>c.el!==el&&c.rect.width>rect.width*.9&&c.rect.width<rect.width*1.1&&c.rect.y>=rect.y+rect.height-2).sort((a,b)=>a.rect.y-b.rect.y)[0];if(next){model.step=next.rect.y-rect.y;model.nextRef=next.el;model.nextOffsetY=0;model.calibrated=true;}}
   function viewChanged(){if(view&&!capture&&!run){repaint();if(model)notify();}}
   function rememberPosition(root){const g=model&&root===model.root?geometry():null;return {root,left:root.scrollLeft,top:root.scrollTop,anchor:g?.local.y,anchorX:g?.local.x,scale:g?.scale||1};}
@@ -240,6 +240,8 @@
   const onMessage=(m,sender,respond)=>{if(m?.scope!=='readercapture')return;handle(m).then(data=>respond({ok:true,data}),e=>respond({ok:false,error:e.message,code:e.code||'CAPTURE_ERROR'}));return true;};
   chrome.runtime.onMessage.addListener(onMessage);
   listen(document,'pointermove',onMove,true);listen(document,'pointerup',onUp,true);
+  // Intercept before shadow dispatch to avoid duplicate native and scripted scrolling.
+  listen(document,'wheel',e=>{if(view&&!capture&&!strip&&e.composedPath?.().includes(view.host))wheel(e);},{capture:true,passive:false});
   listen(document,'pointercancel',()=>{gesture=null;if(raf)cancelAnimationFrame(raf);raf=0;repaint();},true);
   for(const name of ['wheel','touchstart','pointerdown','keydown'])listen(document,name,guardInput,{capture:true,passive:true});
   listen(document,'keydown',e=>{if(e.key==='Escape'&&!capture){gesture=null;if(model){mode='edit';repaint();}else closeView();send('selection-cancelled');}},true);

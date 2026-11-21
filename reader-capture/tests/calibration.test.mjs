@@ -18,6 +18,12 @@ test('visual next-start measurement includes intervening wheel scrolling',async(
   v.overlay().surface.fire('pointerdown',{clientX:170,clientY:154});await v.flush();
   const s=await v.send('selection');assert.equal(s.step,964);assert.equal(s.gap,24);assert.equal(s.calibrated,true);assert.equal(v.notices.at(-1).type,'spacing-selected');v.dispose();
 });
+test('wheel interception blocks native scrolling once and avoids a second scroll for non-cancelable events',async()=>{
+  const v=makeViewer();await v.draw();await v.send('measure-gap');
+  const handled=v.overlay().shadow.fire('wheel',{deltaY:300});assert.equal(v.scroller.scrollTop,300);assert.equal(handled.defaultPrevented,true);
+  const native=v.overlay().shadow.fire('wheel',{deltaY:200,cancelable:false});assert.equal(v.scroller.scrollTop,300);assert.equal(native.defaultPrevented,false);
+  v.scroller.scrollTop+=200;v.tick();assert.equal(v.scroller.scrollTop,500);v.dispose();
+});
 test('corner handles preserve aspect ratio and retain a live selection',async()=>{
   const v=makeViewer();await v.draw();const original=await v.send('selection'),frame=v.overlay().frame,handle=frame.children.find(h=>h.dataset.handle==='se');
   handle.fire('pointerdown',{clientX:830,clientY:690});v.document.fire('pointermove',{clientX:896,clientY:750});v.document.fire('pointerup',{clientX:896,clientY:750});
