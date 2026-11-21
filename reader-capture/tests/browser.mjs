@@ -23,8 +23,9 @@ try{
  await worker.evaluate(async url=>{const [tab]=await chrome.tabs.query({url});await chrome.storage.session.set({target:{id:tab.id,windowId:tab.windowId,url:tab.url,title:tab.title}});},viewer.url());
  await viewer.bringToFront();await panel.waitForFunction(()=>!document.getElementById('capture').disabled);
  async function click(id){await panel.evaluate(id=>document.getElementById(id).click(),id);}
+ async function fill(id,value){await panel.evaluate(id=>{for(let p=document.getElementById(id).parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;},id);await panel.locator('#'+id).fill(value);}
  async function settled(){await panel.waitForFunction(()=>!document.getElementById('capture').disabled,{}, {timeout:60000});const error=await panel.locator('#errorText').textContent();assert.equal(await panel.locator('#errorDetails').isVisible(),false,error);}
- await panel.locator('#wait').fill('100');await click('draw');await settled();
+ await fill('wait','100');await click('draw');await settled();
  const initial=await viewer.locator('.page').first().boundingBox();await viewer.mouse.move(initial.x,initial.y);await viewer.mouse.down();await viewer.mouse.move(initial.x+initial.width,748);await viewer.waitForTimeout(500);
  assert.ok(await viewer.evaluate(()=>scrollY)>0,'dragging at the edge scrolls');
  let visible=await viewer.locator('.page').first().boundingBox();if(visible.y+visible.height>730){await viewer.mouse.wheel(0,300);await viewer.waitForTimeout(150);visible=await viewer.locator('.page').first().boundingBox();}
@@ -36,12 +37,12 @@ try{
  await worker.evaluate(async url=>{const [t]=await chrome.tabs.query({url});await chrome.tabs.setZoom(t.id,.8);},viewer.url());await viewer.waitForTimeout(250);
  const selection=await worker.evaluate(async url=>{const [t]=await chrome.tabs.query({url});return chrome.tabs.sendMessage(t.id,{scope:'readercapture',op:'selection'});},viewer.url());assert.equal(Math.round(selection.data.rect.width),660);assert.equal(Math.round(selection.data.rect.height),940);
  await worker.evaluate(async url=>{const [t]=await chrome.tabs.query({url});await chrome.tabs.setZoom(t.id,1);},viewer.url());await viewer.waitForTimeout(250);
- await panel.locator('#rangeMode').selectOption('repeat');await panel.locator('#pageCount').fill('3');await viewer.bringToFront();
+ await panel.locator('#rangeMode').selectOption('repeat');await fill('pageCount','3');await viewer.bringToFront();
  const popupEvent=context.waitForEvent('page');await click('scanStart');const popup=await popupEvent;await popup.waitForURL(/splitter\.html/);popup.on('pageerror',e=>errors.push(e.message));await popup.locator('#scanInfo').filter({hasText:'660 × 2868'}).waitFor({timeout:60000});await settled();
  const metadata=await popup.evaluate(async()=>{const {getScan}=await import('./lib/scan-store.js');return getScan(new URL(location.href).searchParams.get('scan'));});assert.equal(metadata.status,'complete');assert.equal(metadata.savedHeight,2868);assert.equal(metadata.width,660);
  // Export a page from the stored strip and compare with a clean browser-rendered page.
  const actual=await popup.evaluate(async()=>{const {getScan,getTile}=await import('./lib/scan-store.js'),{renderScanRegion}=await import('./lib/split.js');const scan=await getScan(new URL(location.href).searchParams.get('scan'));const result=await renderScanRegion(scan,{top:0,bottom:940},getTile,{type:'image/png'});return Array.from(new Uint8Array(await result.blob.arrayBuffer()));});await writeFile(path.join(output,'strip-page1.png'),Buffer.from(actual));
- await viewer.addStyleTag({content:'header,.test-toolbar{visibility:hidden!important}'});await viewer.locator('.page').first().screenshot({path:path.join(output,'reference-page1.png')});
+ await viewer.addStyleTag({content:'header,.test-toolbar,[data-readercapture]{visibility:hidden!important}'});await viewer.locator('.page').first().screenshot({path:path.join(output,'reference-page1.png')});
  const {loadImage,createCanvas}=require(require.resolve('@napi-rs/canvas',{paths:[process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES||process.cwd()]}));
  const a=await loadImage(Buffer.from(actual)),b=await loadImage(await readFile(path.join(output,'reference-page1.png')));assert.equal(a.width,b.width);assert.equal(a.height,b.height);const c=createCanvas(a.width,a.height),ctx=c.getContext('2d');ctx.drawImage(a,0,0);const pixelsA=Buffer.from(ctx.getImageData(0,0,a.width,a.height).data);ctx.clearRect(0,0,a.width,a.height);ctx.drawImage(b,0,0);const pixelsB=Buffer.from(ctx.getImageData(0,0,b.width,b.height).data);assert.ok(pixelsA.equals(pixelsB),'captured page matches reference pixels, including areas behind toolbars');
  const before=await viewer.evaluate(()=>scrollY);await popup.locator('#pageHeight').fill('940');await popup.locator('#pageGap').fill('24');await popup.locator('#regular').click();assert.match(await popup.locator('#pageCount').textContent(),/3 σελίδες/);
