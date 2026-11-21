@@ -1,9 +1,9 @@
 (() => {
   'use strict';
-  const VERSION='0.2.0', SLOT='__readerCaptureController';
+  const VERSION='0.3.0', SLOT='__readerCaptureController';
   try { globalThis[SLOT]?.dispose(); } catch {}
   const removers=[];
-  let model=null,view=null,mode='idle',gesture=null,gapPoint=null,capture=null,run=null,strip=null,raf=0,lastTick=0,pickerOptions={},notifyTimer=0;
+  let model=null,view=null,mode='idle',gesture=null,gapPoint=null,capture=null,run=null,strip=null,walk=null,raf=0,lastTick=0,pickerOptions={},notifyTimer=0;
   const customBars=new Set();
   const box=r=>({x:r.x,y:r.y,width:r.width,height:r.height});
   const docRoot=()=>document.scrollingElement||document.documentElement;
@@ -19,35 +19,53 @@
   function clipFor(root){let c={x:0,y:0,width:innerWidth,height:innerHeight};if(!isDoc(root)){const o=origin(root);c=intersect(c,{...o,width:root.clientWidth,height:root.clientHeight});for(let p=root.parentElement;p&&p!==document.body;p=p.parentElement)if(/hidden|auto|scroll|clip/.test(getComputedStyle(p).overflow))c=intersect(c,box(p.getBoundingClientRect()));}return c;}
   function bandsFor(t,opts){
     const c=clipFor(t.root),top=Math.max(c.y,Number(opts.topInset)||0),bottom=Math.min(c.y+c.height,innerHeight-(Number(opts.bottomInset)||0)),base={x:c.x,y:top,width:c.width,height:Math.max(0,bottom-top)};
-    let bands=[base];const elements=new Set(customBars);
-    if(opts.autoExcludeBars!==false)for(const el of document.querySelectorAll('header,nav,[role="toolbar"],[role="banner"],[class*="toolbar"],[class*="header"],[class*="sticky"],[class*="fixed"],[class*="bar"]'))elements.add(el);
+    let bands=[base];const elements=new Set([...customBars,...(walk?.motionBars||[])]),styles=new Map();
+    const styleFor=el=>{if(!styles.has(el))styles.set(el,getComputedStyle(el));return styles.get(el);};
+    // Inspect positioning, including painted children of transparent fixed wrappers.
+    // Class names and ARIA roles are not reliable indicators of floating UI.
+    if(opts.autoExcludeBars!==false)for(const el of document.querySelectorAll('*')){
+      if(owned(el)||el===t.root||within(t.root,el)||el===t.el)continue;
+      const s=styleFor(el);if(s.display==='none'||s.visibility==='hidden'||s.opacity==='0')continue;
+      let anchored=false;
+      for(let p=el;p&&p!==t.root&&p!==document.body;p=p.parentElement){if(['fixed','sticky'].includes(styleFor(p).position)){anchored=true;break;}}
+      if(!anchored)continue;
+      const direct=['fixed','sticky'].includes(s.position),painted=s.backgroundColor&&!/^(transparent|rgba\([^)]*,\s*0\))$/.test(s.backgroundColor);
+      if(direct||painted||/^(IMG|CANVAS|VIDEO|IFRAME|BUTTON|INPUT|SELECT)$/.test(el.tagName)||(!el.children?.length&&el.textContent?.trim())){
+        // A full-window transparent wrapper has no pixels of its own to omit.
+        const r=el.getBoundingClientRect();if(direct&&!painted&&r.height>innerHeight*.7&&el.children?.length)continue;
+        elements.add(el);
+      }
+    }
     for(const el of elements){
-      if(!el.isConnected||el.closest?.('[data-readercapture]'))continue;const style=getComputedStyle(el),r=box(el.getBoundingClientRect());
-      if(!customBars.has(el)&&!['fixed','sticky'].includes(style.position))continue;
-      if(style.display==='none'||style.visibility==='hidden'||r.height<3||r.height>Math.min(250,innerHeight*.45))continue;
-      const overlap=Math.max(0,Math.min(r.x+r.width,t.rect.x+t.rect.width)-Math.max(r.x,t.rect.x));if(overlap<Math.min(240,t.rect.width*.4))continue;
-      const next=[];for(const b of bands){const lo=Math.max(b.y,r.y),hi=Math.min(b.y+b.height,r.y+r.height);if(hi<=lo){next.push(b);continue;}if(lo>b.y)next.push({...b,height:lo-b.y});if(hi<b.y+b.height)next.push({...b,y:hi,height:b.y+b.height-hi});}bands=next;
+      if(!el.isConnected||owned(el))continue;const style=styleFor(el),r=box(el.getBoundingClientRect());
+      if(style.display==='none'||style.visibility==='hidden'||style.opacity==='0'||r.height<2||r.width<2)continue;
+      const overlap=Math.max(0,Math.min(r.x+r.width,t.rect.x+t.rect.width)-Math.max(r.x,t.rect.x));if(overlap<2)continue;
+      const guard=walk?8:0,next=[];for(const b of bands){const lo=Math.max(b.y,r.y-guard),hi=Math.min(b.y+b.height,r.y+r.height+guard);if(hi<=lo){next.push(b);continue;}if(lo>b.y)next.push({...b,height:lo-b.y});if(hi<b.y+b.height)next.push({...b,y:hi,height:b.y+b.height-hi});}bands=next;
     }
     return bands.filter(b=>b.height>=60).sort((a,b)=>a.y-b.y);
   }
   async function moveToCovered(covered,opts){
     for(let attempt=0;attempt<4;attempt++){
       const m=currentCapture(),s=capture,t=s.target,root=t.root,bands=bandsFor({...t,rect:m.rect},s.opts),max=Math.max(0,root.scrollHeight-root.clientHeight),line=m.rect.y+covered;
-      const plans=bands.map(b=>{const pad=Math.min(24,b.height/8),scrollTop=clamp(root.scrollTop+line-b.y-pad,0,max),y=line-(scrollTop-root.scrollTop);return {band:b,scrollTop,y,fresh:Math.min(b.y+b.height-y,t.rect.height-covered)};}).filter(p=>p.y>=p.band.y-.5&&p.y<p.band.y+p.band.height-.5&&p.fresh>.1).sort((a,b)=>b.fresh-a.fresh);
+      const plans=bands.map(b=>{const fits=walk&&covered===0&&t.rect.height<=b.height-16,pad=fits?(b.height-t.rect.height)/2:Math.min(24,b.height/8),scrollTop=clamp(root.scrollTop+line-b.y-pad,0,max),y=line-(scrollTop-root.scrollTop);return {band:b,scrollTop,y,fresh:Math.min(b.y+b.height-y,t.rect.height-covered)};}).filter(p=>p.y>=p.band.y-.5&&p.y<p.band.y+p.band.height-.5&&p.fresh>.1).sort((a,b)=>b.fresh-a.fresh);
       if(!plans.length)throw fail('Η επόμενη γραμμή καλύπτεται από μπάρα. Διόρθωσε τα περιθώρια ή τα όρια του εύρους.','OCCLUDED');
-      const plan=plans[0];scroll(root,root.scrollLeft,plan.scrollTop);await wait(clamp(Number(opts.wait)||450,80,3000));
+      const plan=plans[0];
+      if(walk&&Math.abs(plan.scrollTop-root.scrollTop)>walk.step+.5){await walkScroll(root.scrollTop+Math.sign(plan.scrollTop-root.scrollTop)*walk.step);return {pending:true};}
+      if(walk){const centered=await walkScroll(plan.scrollTop);if(!centered)return {pending:true};}else{scroll(root,root.scrollLeft,plan.scrollTop);await wait(clamp(Number(opts.wait)||450,80,3000));}
       const rect={...s.rect,x:s.rect.x-(root.scrollLeft-s.left),y:s.rect.y-(root.scrollTop-s.top)},row=rect.y+covered;
       const band=bandsFor({...t,rect},s.opts).find(b=>row>=b.y-.5&&row<b.y+b.height-.5);
-      if(band){s.band=band;return currentCapture();}
+      if(band){s.band=band;s.covered=covered;s.maxRows=walk&&t.rect.height>band.height-16?walk.step*2:Infinity;return currentCapture();}
     }
     throw fail('Η μπάρα αλλάζει θέση κατά τη λήψη. Αύξησε την αναμονή.','LAYOUT_CHANGED');
   }
+  function within(el,parent){for(let p=el;p;p=p.parentElement)if(p===parent)return true;return false;}
+  function owned(el){for(let p=el;p;p=p.parentElement)if(p.dataset?.readercapture)return true;return false;}
   function localRect(rect,root){const o=origin(root);return {...rect,x:rect.x-o.x+root.scrollLeft,y:rect.y-o.y+root.scrollTop};}
   function screenRect(rect,root){const o=origin(root);return {...rect,x:o.x+rect.x-root.scrollLeft,y:o.y+rect.y-root.scrollTop};}
   function point(e,root){const o=origin(root);return {x:e.clientX-o.x+root.scrollLeft,y:e.clientY-o.y+root.scrollTop};}
   function scroll(root,left,top){root.scrollTo({left,top,behavior:'instant'});}
   function under(x,y){if(view)view.host.style.setProperty('display','none','important');let el;try{el=document.elementFromPoint(x,y);}finally{if(view)view.host.style.removeProperty('display');}return el;}
-  const PAGE_SELECTOR='[data-page-number],[data-page-no],.page,.pdf-page,.document-page,.document_page,.pf,.slide';
+  const PAGE_SELECTOR='[data-page-number],[data-page-no],[data-page-index],.page,.pdf-page,.pdfPage,.document-page,.document_page,.pf,.slide';
   function candidates(){
     const found=new Set(document.querySelectorAll(PAGE_SELECTOR+',canvas'));
     for(const x of [.3,.5,.7])for(let p=under(innerWidth*x,innerHeight*.5),i=0;p&&i<6;p=p.parentElement,i++)found.add(p);
@@ -61,7 +79,7 @@
       const explicit=el.matches(PAGE_SELECTOR),white=/rgb\(25[0-5], 25[0-5], 25[0-5]\)/.test(c.backgroundColor);
       if(!explicit&&!white&&!el.querySelector('canvas'))continue;
       const visible=intersect(r,clipFor(rootFor(el))),area=visible.width*visible.height;
-      list.push({el,rect:r,score:(explicit?5:0)+(white?1:0)+area/(r.width*Math.min(innerHeight,r.height)||1)*4-Math.abs(r.y+r.height/2-innerHeight/2)/Math.max(innerHeight,r.height)});
+      list.push({el,rect:r,explicit,score:(explicit?5:0)+(white?1:0)+area/(r.width*Math.min(innerHeight,r.height)||1)*4-Math.abs(r.y+r.height/2-innerHeight/2)/Math.max(innerHeight,r.height)});
     }
     return list.sort((a,b)=>b.score-a.score);
   }
@@ -144,7 +162,7 @@
     v.ghost.hidden=!model||!model.calibrated||mode==='draw'||mode==='element';if(!v.ghost.hidden){const g=geometry();place(v.ghost,{...g.rect,y:g.rect.y+(currentIndex+1)*g.step});}
     v.line.hidden=mode!=='gap'||!gapPoint;if(!v.line.hidden){v.line.style.top=gapPoint.clientY+'px';const g=geometry(),p=point(gapPoint,model.root),delta=p.y-g.local.y;v.line.className='line'+(delta>=g.local.height-2?' valid':'');v.help.textContent=`Κλικ στην επόμενη αρχή · βήμα ${Math.round(delta)} px · διάκενο ${Math.round(delta-g.local.height)} px`;}
   }
-  function startDraw(kind='manual',options={}){if(capture||run||strip)throw fail('Σταμάτησε πρώτα τη λήψη.');pickerOptions=options;buildView();mode=kind==='element'?'element':kind==='bar'?'bar':'draw';gesture=null;gapPoint=null;repaint();return {ok:true};}
+  function startDraw(kind='manual',options={}){if(capture||run||strip||walk)throw fail('Σταμάτησε πρώτα τη λήψη.');pickerOptions=options;buildView();mode=kind==='element'?'element':kind==='bar'?'bar':'draw';gesture=null;gapPoint=null;repaint();return {ok:true};}
   function startGap(){if(!model)throw fail('Σχεδίασε πρώτα την πρώτη σελίδα.');buildView();mode='gap';gesture=null;gapPoint=null;repaint();return summary();}
   function down(e){
     if(e.button!==undefined&&e.button!==0)return;consume(e);
@@ -177,21 +195,23 @@
   }
   function wheel(e){if(!view||e.ctrlKey||e.metaKey)return;const root=gesture?.root||model?.root||rootFor(under(e.clientX,e.clientY));if(e.cancelable===false&&isDoc(root)){requestAnimationFrame(()=>{updateGesture();repaint();});return;}consume(e);const multiplier=e.deltaMode===1?20:e.deltaMode===2?clipFor(root).height:1;scroll(root,root.scrollLeft+(e.deltaX||0)*multiplier,root.scrollTop+(e.deltaY||0)*multiplier);updateGesture();repaint();}
   function inferSpacing(el){const rect=el.getBoundingClientRect(),next=candidates().filter(c=>c.el!==el&&c.rect.width>rect.width*.9&&c.rect.width<rect.width*1.1&&c.rect.y>=rect.y+rect.height-2).sort((a,b)=>a.rect.y-b.rect.y)[0];if(next){model.step=next.rect.y-rect.y;model.nextRef=next.el;model.nextOffsetY=0;model.calibrated=true;}}
-  function viewChanged(){if(view&&!capture&&!run){repaint();if(model)notify();}}
+  function viewChanged(){if(view&&!capture&&!run&&!walk){repaint();if(model)notify();}}
   function rememberPosition(root){const g=model&&root===model.root?geometry():null;return {root,left:root.scrollLeft,top:root.scrollTop,anchor:g?.local.y,anchorX:g?.local.x,scale:g?.scale||1};}
   function restorePosition(position){if(!position?.root.isConnected)return;let left=position.left,top=position.top;if(model&&position.root===model.root&&position.anchor!==undefined){const g=geometry(),factor=g.scale/position.scale;top=g.local.y+(position.top-position.anchor)*factor;left=g.local.x+(position.left-position.anchorX)*factor;}scroll(position.root,left,top);}
-  function guardInput(e){if(!capture&&!strip)return;if((e.ctrlKey||e.metaKey)&&(e.type==='wheel'||['Control','Meta','+','-','=','0'].includes(e.key)))return;if(capture)capture.cancelled=true;if(strip)strip.cancelled=true;if(run)run.cancelled=true;if(e.type==='keydown'&&e.key==='Escape')send('capture-cancelled');}
+  function guardInput(e){if(!capture&&!strip&&!walk)return;if((e.ctrlKey||e.metaKey)&&(e.type==='wheel'||['Control','Meta','+','-','=','0'].includes(e.key)))return;if(capture)capture.cancelled=true;if(strip)strip.cancelled=true;if(walk)walk.cancelled=true;if(run)run.cancelled=true;if(e.type==='keydown'&&e.key==='Escape')send('capture-cancelled');}
   function currentCapture(){
     if(!capture)throw fail('Η λήψη έχει λήξει.','CAPTURE_EXPIRED');const s=capture,t=s.target;
-    if(s.cancelled||run?.cancelled||strip?.cancelled)throw fail('Η λήψη διακόπηκε από κίνηση ή πλήκτρο στο έγγραφο.','USER_INTERRUPTED');
+    if(s.cancelled||run?.cancelled||strip?.cancelled||walk?.cancelled)throw fail('Η λήψη διακόπηκε από κίνηση ή πλήκτρο στο έγγραφο.','USER_INTERRUPTED');
     if(innerWidth!==s.vw||innerHeight!==s.vh||Math.abs(devicePixelRatio-s.dpr)>.001)throw fail('Άλλαξε το zoom ή το παράθυρο. Επαναπροσδιορισμός της ίδιας σελίδας…','VIEWPORT_CHANGED');
     const rect={...s.rect,x:s.rect.x-(t.root.scrollLeft-s.left),y:s.rect.y-(t.root.scrollTop-s.top)};
     if(!t.root.isConnected)throw fail('Ο viewer άλλαξε κατά τη λήψη.','VIEWER_CHANGED');
     if(t.el){const actual=t.el.getBoundingClientRect();if(Math.abs(actual.width-rect.width)>2||Math.abs(actual.height-rect.height)>2||Math.abs(actual.y-rect.y)>3)throw fail('Η διάταξη άλλαξε κατά τη λήψη.','LAYOUT_CHANGED');}
     if(t.kind==='manual'&&Math.abs(geometry().scale-t.scale)>.002)throw fail('Η σελίδα άλλαξε μέγεθος. Επανάληψη λήψης…','VIEWPORT_CHANGED');
-    const bands=bandsFor({...t,rect},s.opts);if(!bands.length)throw fail('Δεν υπάρχει αρκετό ακάλυπτο ύψος για λήψη.','OCCLUDED');const clip=s.band?bands.find(b=>Math.abs(b.y-s.band.y)<1&&Math.abs(b.height-s.band.height)<1):bands[0];if(!clip)throw fail('Μετακινήθηκε η σταθερή μπάρα.','LAYOUT_CHANGED');return {...info({...t,rect}),clip};
+    const bands=bandsFor({...t,rect},s.opts);if(!bands.length)throw fail('Δεν υπάρχει αρκετό ακάλυπτο ύψος για λήψη.','OCCLUDED');let clip=s.band?bands.find(b=>Math.abs(b.y-s.band.y)<1&&Math.abs(b.height-s.band.height)<1):bands[0];if(!clip)throw fail('Μετακινήθηκε η σταθερή μπάρα.','LAYOUT_CHANGED');
+    if(Number.isFinite(s.maxRows))clip={...clip,height:Math.min(clip.height,rect.y+(s.covered||0)+s.maxRows-clip.y)};
+    return {...info({...t,rect}),clip};
   }
-  function endCapture(restore=true){if(!capture)return {ok:true};const s=capture;capture=null;clearTimeout(s.timer);if(restore)restorePosition(s.position);if(!run&&!strip)hideOverlay(false);return {ok:true};}
+  function endCapture(restore=true){if(!capture)return {ok:true};const s=capture;capture=null;clearTimeout(s.timer);if(restore)restorePosition(s.position);if(!run&&!strip&&!walk)hideOverlay(false);return {ok:true};}
   function stripTarget(){
     if(!strip||strip.cancelled)throw fail('Η ενιαία λήψη διακόπηκε.','USER_INTERRUPTED');const g=geometry();let local={...g.local};
     if(strip.opts.rangeMode==='repeat'){local.y+=strip.first*g.step;local.height=g.local.height+(strip.count-1)*g.step;}
@@ -199,6 +219,87 @@
     return {root:model.root,local,rect:screenRect(local,model.root),kind:'manual',scale:g.scale,label:'Ενιαία λήψη'};
   }
   function endStrip(restore=true){endCapture(false);const s=strip;strip=null;if(restore&&s)restorePosition(s.position);hideOverlay(false);repaint();return {ok:true};}
+  function checkWalk(){
+    if(!walk||walk.cancelled)throw fail('Η σταδιακή λήψη διακόπηκε.','USER_INTERRUPTED');
+    if(!walk.root.isConnected)throw fail('Ο viewer άλλαξε. Επίλεξε ξανά την πρώτη σελίδα.','VIEWER_CHANGED');
+    if(innerWidth!==walk.vw||innerHeight!==walk.vh||devicePixelRatio!==walk.dpr)throw fail('Άλλαξε το zoom ή το παράθυρο. Οι ολοκληρωμένες σελίδες διατηρήθηκαν.','VIEWPORT_CHANGED');
+    return walk;
+  }
+  function motionSamples(w){
+    const samples=new Map(),c=clipFor(w.root);
+    for(const el of document.querySelectorAll('*')){
+      if(owned(el)||el===w.root||within(w.root,el))continue;
+      const r=box(el.getBoundingClientRect());
+      if(r.width<Math.min(100,w.width*.2)||r.height<4||r.height>250||r.y+r.height<c.y||r.y>c.y+c.height)continue;
+      if(r.x+r.width<w.x||r.x>w.x+w.width)continue;
+      const s=getComputedStyle(el);if(s.display==='none'||s.visibility==='hidden'||s.opacity==='0')continue;
+      samples.set(el,r);
+    }
+    return samples;
+  }
+  async function walkScroll(top){
+    const w=checkWalk(),root=w.root,before=motionSamples(w),previous=root.scrollTop;
+    // Keep successive viewports on the same device-pixel grid. Fractional CSS
+    // offsets otherwise resample the same source row differently at each seam.
+    const max=Math.floor(Math.max(0,root.scrollHeight-root.clientHeight)*w.dpr)/w.dpr,aligned=Math.round(top*w.dpr)/w.dpr;
+    let left=root.scrollLeft,centered=true;
+    if(w.current){const c=clipFor(root),r=screenRect(w.current.local,root),maxLeft=Math.max(0,(root.scrollWidth||root.clientWidth)-root.clientWidth),desired=clamp(left+r.x+r.width/2-c.x-c.width/2,0,maxLeft);centered=Math.abs(desired-left)<=w.step+.5;left=clamp(desired,left-w.step,left+w.step);}
+    scroll(root,Math.round(left*w.dpr)/w.dpr,clamp(aligned,0,max));
+    await wait(clamp(Number(w.opts.wait)||450,80,3000));checkWalk();
+    if(Math.abs(root.scrollTop-previous)>=16)for(const [el,r]of before){
+      if(!el.isConnected)continue;const now=el.getBoundingClientRect();
+      if(Math.abs(now.y-r.y)<1&&Math.abs(now.x-r.x)<1&&Math.abs(now.width-r.width)<1&&Math.abs(now.height-r.height)<1)w.motionBars.add(el);
+    }
+    w.steps++;return centered;
+  }
+  function beginWalk(opts){
+    if(strip||run||walk)throw fail('Σταμάτησε πρώτα την προηγούμενη λήψη.');
+    if(gesture)throw fail('Ολοκλήρωσε πρώτα τη σχεδίαση.');endCapture();
+    const template=opts.walkMode==='template';if(template&&(!model||!model.calibrated))throw fail('Για δικό σου πρότυπο, σχεδίασε μία σελίδα και όρισε την επόμενη αρχή.','NOT_CALIBRATED');
+    const seed=model?{...manualTarget(0),el:model.ref}:getTarget({mode:'auto'}),root=seed.root;
+    const ref=!template&&seed.el?.isConnected?box(seed.el.getBoundingClientRect()):seed.rect;
+    const local=localRect(ref,root),c=clipFor(root),step=clamp(Number(opts.walkStep)||140,32,Math.min(400,Math.max(32,c.height/2)));
+    walk={root,position:rememberPosition(root),opts:{...opts,autoExcludeBars:true},template,cursor:local.y,width:ref.width,x:ref.x,step,count:0,steps:0,current:null,cancelled:false,stalled:0,lastHeight:0,loading:0,probe:0,probeTop:root.scrollTop,rewinding:root.scrollTop>local.y+step,motionBars:new Set(),vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio};
+    hideOverlay(true);return info({...seed,rect:ref});
+  }
+  async function walkNext(){
+    const w=checkWalk(),root=w.root,c=clipFor(root);if(w.current)throw fail('Η τρέχουσα σελίδα δεν έχει ολοκληρωθεί.');
+    // A short out-and-back probe distinguishes document content from UI kept
+    // stationary by JavaScript, even before the first screenshot is accepted.
+    if(w.probe<2){const max=Math.max(0,root.scrollHeight-root.clientHeight),next=w.probe===0?(max-root.scrollTop>=16?Math.min(max,root.scrollTop+w.step):Math.max(0,root.scrollTop-w.step)):w.probeTop;w.probe++;await walkScroll(next);return {state:'search',steps:w.steps};}
+    let target;
+    if(w.template){
+      const t=manualTarget(w.count);if(t.local.y+t.local.height<=root.scrollHeight+2)target=t;
+    }else{
+      const found=candidates().filter(p=>rootFor(p.el)===root&&p.rect.width>=w.width*.6&&p.rect.width<=w.width*1.6&&p.rect.y<c.y+c.height&&p.rect.y+p.rect.height>c.y)
+        .map(p=>({...p,local:localRect(p.rect,root)})).filter(p=>p.local.y>=w.cursor-2&&p.local.y+p.local.height>w.cursor+20)
+        .sort((a,b)=>a.local.y-b.local.y||Number(b.explicit)-Number(a.explicit)||b.score-a.score)[0];
+      if(found)target={el:found.el,root,rect:found.rect,local:found.local,kind:'element',label:found.el.getAttribute('data-page-number')||found.el.getAttribute('data-page-no')||String(w.count+1)};
+    }
+    if(target){
+      await wait(clamp(Number(w.opts.wait)||450,80,3000));checkWalk();
+      const actual=target.el?box(target.el.getBoundingClientRect()):manualTarget(w.count).rect;
+      if(Math.abs(actual.width-target.rect.width)>1||Math.abs(actual.height-target.rect.height)>1||Math.abs(actual.y-target.rect.y)>1){if(++w.loading>30)throw fail('Η διάταξη της σελίδας δεν σταθεροποιείται. Αύξησε την αναμονή.','PAGE_NOT_READY');return {state:'search',steps:w.steps};}
+      const images=target.el?.querySelectorAll?.('img')||[];
+      if(document.fonts?.status==='loading'||[...images].some(im=>(im.currentSrc||im.getAttribute('src'))&&(!im.complete||im.naturalWidth===0))){if(++w.loading>30)throw fail('Δεν φορτώθηκαν οι εικόνες ή οι γραμματοσειρές της σελίδας. Αύξησε την αναμονή ή φόρτωσέ τη πρώτα χειροκίνητα.','PAGE_NOT_READY');return {state:'loading',steps:w.steps};}
+      w.loading=0;w.current=target;
+      capture={target,rect:{...target.rect},left:root.scrollLeft,top:root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts:w.opts,cancelled:false,position:w.position};
+      capture.timer=setTimeout(()=>endCapture(false),300000);
+      return {state:'page',...currentCapture(),steps:w.steps};
+    }
+    const max=Math.max(0,root.scrollHeight-root.clientHeight),atEnd=root.scrollTop>=max-1;
+    if(atEnd&&root.scrollHeight===w.lastHeight)w.stalled++;else w.stalled=0;w.lastHeight=root.scrollHeight;
+    if(w.stalled>=3){if(!w.count)throw fail('Δεν εντοπίστηκαν όρια σελίδας. Διάλεξε «Δικό μου πρότυπο» και όρισε την επόμενη αρχή.','NO_PAGE');return {state:'end',pages:w.count};}
+    const visibleTop=localRect({x:c.x,y:c.y,width:1,height:1},root).y;
+    if(visibleTop<=w.cursor)w.rewinding=false;
+    await walkScroll(root.scrollTop+(w.rewinding?-w.step:w.step));
+    return {state:'search',steps:w.steps,pages:w.count};
+  }
+  function commitWalkPage(){
+    const w=checkWalk();if(!w.current)throw fail('Δεν υπάρχει τρέχουσα σελίδα.');currentCapture();
+    w.cursor=w.current.local.y+w.current.local.height;w.count++;w.current=null;endCapture(false);return {pages:w.count};
+  }
+  function endWalk(restore=true){endCapture(false);const w=walk;walk=null;if(restore&&w)restorePosition(w.position);hideOverlay(false);repaint();return {ok:true};}
   async function prepare(index,opts){
     let previous=-1,stable=0;
     for(let n=0;n<6;n++){const t=manualTarget(index),root=t.root,c=clipFor(root),top=Math.max(c.y,Number(opts.topInset)||0)+24;scroll(root,root.scrollLeft,root.scrollTop+t.rect.y-top);await wait(clamp(Number(opts.wait)||450,80,3000));const current=manualTarget(index),bottom=current.local.y+current.local.height;if(bottom<=root.scrollHeight+2)return info(current);if(root.scrollHeight===previous)stable++;else stable=0;previous=root.scrollHeight;if(stable>=2)break;}
@@ -208,7 +309,12 @@
     const {op,opts={}}=message;
     if(op==='ping')return {version:VERSION,selected:!!model};
     if(op==='configure'){pickerOptions={...pickerOptions,...opts};return {ok:true};}
-    if(op==='begin-strip'){if(!model)throw fail('Σχεδίασε το εύρος που θέλεις να κρατήσεις.','NO_SELECTION');endCapture();const first=Number(message.first)||0,count=Number(message.count)||1;if(!Number.isInteger(first)||first<0||!Number.isInteger(count)||count<1||count>1000)throw fail('Μη έγκυρο εύρος σελίδων.');if(opts.rangeMode==='repeat'&&!model.calibrated)throw fail('Για επανάληψη σελίδων όρισε την επόμενη αρχή.');strip={position:rememberPosition(model.root),opts,first,count,cancelled:false,lastHeight:0,stalled:0};hideOverlay(true);return {...info(stripTarget()),selection:summary()};}
+    if(op==='begin-walk')return beginWalk(opts);
+    if(op==='walk-next')return walkNext();
+    if(op==='walk-commit')return commitWalkPage();
+    if(op==='walk-retry'){checkWalk().current=null;endCapture(false);return {ok:true};}
+    if(op==='end-walk')return endWalk(message.restore!==false);
+    if(op==='begin-strip'){if(walk||run||strip)throw fail('Υπάρχει ήδη λήψη σε εξέλιξη.');if(!model)throw fail('Σχεδίασε το εύρος που θέλεις να κρατήσεις.','NO_SELECTION');endCapture();const first=Number(message.first)||0,count=Number(message.count)||1;if(!Number.isInteger(first)||first<0||!Number.isInteger(count)||count<1||count>1000)throw fail('Μη έγκυρο εύρος σελίδων.');if(opts.rangeMode==='repeat'&&!model.calibrated)throw fail('Για επανάληψη σελίδων όρισε την επόμενη αρχή.');strip={position:rememberPosition(model.root),opts,first,count,cancelled:false,lastHeight:0,stalled:0};hideOverlay(true);return {...info(stripTarget()),selection:summary()};}
     if(op==='strip-preload'){const t=stripTarget(),root=t.root,c=clipFor(root);scroll(root,root.scrollLeft,root.scrollTop+t.rect.y+(Number(message.offset)||0)-c.y);await wait(clamp(Number(opts.wait)||450,80,3000));const fresh=stripTarget(),o=origin(root),visibleBottom=root.scrollTop+c.y+c.height-o.y,atBottom=root.scrollTop>=root.scrollHeight-root.clientHeight-2;if(atBottom&&root.scrollHeight===strip.lastHeight)strip.stalled++;else strip.stalled=0;strip.lastHeight=root.scrollHeight;const reached=visibleBottom>=fresh.local.y+fresh.local.height-1;return {...info(fresh),done:(strip.opts.rangeMode!=='end'&&reached)||strip.stalled>=2,nextOffset:Math.max((Number(message.offset)||0)+80,visibleBottom-fresh.local.y-40)};}
     if(op==='strip-ready'){const t=stripTarget();t.local.height=Math.min(t.local.height,t.root.scrollHeight-t.local.y);if(t.local.height<1)throw fail('Το επιλεγμένο εύρος δεν υπάρχει.');t.rect=screenRect(t.local,t.root);capture={target:t,rect:{...t.rect},left:t.root.scrollLeft,top:t.root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts:strip.opts,cancelled:false,position:strip.position};return {...currentCapture(),selection:summary()};}
     if(op==='end-strip')return endStrip(message.restore!==false);
@@ -221,11 +327,11 @@
     if(op==='cancel-picker'){gesture=null;if(raf)cancelAnimationFrame(raf);raf=0;if(model){mode='edit';repaint();}else closeView();return {ok:true};}
     if(op==='calibrate-auto'){const t=getTarget({mode:'auto'});createModel(t.rect,t.root,t.el);inferSpacing(t.el);buildView();mode='edit';repaint();notify('bounds-selected');return summary();}
     if(op==='inspect'){const t=getTarget(opts);if(message.flash&&model){buildView();mode='edit';repaint();}return info(t);}
-    if(op==='begin-run'){if(!model||!model.calibrated)throw fail('Όρισε πρώτα την περιοχή και την αρχή της επόμενης σελίδας.','NOT_CALIBRATED');endCapture();run={position:rememberPosition(model.root),cancelled:false};hideOverlay(true);return summary();}
+    if(op==='begin-run'){if(walk||strip||run)throw fail('Υπάρχει ήδη λήψη σε εξέλιξη.');if(!model||!model.calibrated)throw fail('Όρισε πρώτα την περιοχή και την αρχή της επόμενης σελίδας.','NOT_CALIBRATED');endCapture();run={position:rememberPosition(model.root),cancelled:false};hideOverlay(true);return summary();}
     if(op==='end-run'){endCapture(false);const r=run;run=null;if(message.restore!==false&&r)restorePosition(r.position);hideOverlay(false);repaint();return {ok:true};}
     if(op==='prepare')return prepare(message.index,opts);
     if(op==='goto'){const m=await prepare(message.index,opts);repaint();return m;}
-    if(op==='begin'){endCapture(!run);if(gesture)throw fail('Ολοκλήρωσε πρώτα τη σχεδίαση.');const t=getTarget(opts);if(run?.cancelled)throw fail('Η λήψη διακόπηκε.','USER_INTERRUPTED');capture={target:t,rect:{...t.rect},left:t.root.scrollLeft,top:t.root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts,cancelled:false,position:rememberPosition(t.root)};capture.timer=setTimeout(()=>endCapture(!run),120000);hideOverlay(true);return currentCapture();}
+    if(op==='begin'){if(walk||strip)throw fail('Υπάρχει ήδη λήψη σε εξέλιξη.');endCapture(!run);if(gesture)throw fail('Ολοκλήρωσε πρώτα τη σχεδίαση.');const t=getTarget(opts);if(run?.cancelled)throw fail('Η λήψη διακόπηκε.','USER_INTERRUPTED');capture={target:t,rect:{...t.rect},left:t.root.scrollLeft,top:t.root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts,cancelled:false,position:rememberPosition(t.root)};capture.timer=setTimeout(()=>endCapture(!run),120000);hideOverlay(true);return currentCapture();}
     if(op==='move'){if(capture)capture.band=null;return moveToCovered(message.covered,opts);}
     if(op==='metrics')return currentCapture();
     if(op==='end')return endCapture(message.restore!==false&&!run);
@@ -241,10 +347,10 @@
   chrome.runtime.onMessage.addListener(onMessage);
   listen(document,'pointermove',onMove,true);listen(document,'pointerup',onUp,true);
   // Intercept before shadow dispatch to avoid duplicate native and scripted scrolling.
-  listen(document,'wheel',e=>{if(view&&!capture&&!strip&&e.composedPath?.().includes(view.host))wheel(e);},{capture:true,passive:false});
+  listen(document,'wheel',e=>{if(view&&!capture&&!strip&&!walk&&e.composedPath?.().includes(view.host))wheel(e);},{capture:true,passive:false});
   listen(document,'pointercancel',()=>{gesture=null;if(raf)cancelAnimationFrame(raf);raf=0;repaint();},true);
   for(const name of ['wheel','touchstart','pointerdown','keydown'])listen(document,name,guardInput,{capture:true,passive:true});
   listen(document,'keydown',e=>{if(e.key==='Escape'&&!capture){gesture=null;if(model){mode='edit';repaint();}else closeView();send('selection-cancelled');}},true);
   listen(document,'scroll',viewChanged,true);listen(window,'resize',viewChanged);if(window.visualViewport)listen(window.visualViewport,'resize',viewChanged);
-  globalThis[SLOT]={version:VERSION,dispose(){if(strip)endStrip();endCapture(!run);if(run)restorePosition(run.position);run=null;closeView();clearTimeout(notifyTimer);for(const off of removers)off();try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}};
+  globalThis[SLOT]={version:VERSION,dispose(){if(walk)endWalk();if(strip)endStrip();endCapture(!run);if(run)restorePosition(run.position);run=null;closeView();clearTimeout(notifyTimer);for(const off of removers)off();try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}};
 })();

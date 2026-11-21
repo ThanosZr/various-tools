@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "ReaderCapture — Σελίδες σε PDF",
-  "version": "0.2.0",
-  "version_name": "0.2",
+  "version": "0.3.0",
+  "version_name": "0.3",
   "minimum_chrome_version": "116",
-  "description": "Ενιαία λήψη επιλεγμένου εύρους με αποκλεισμό σταθερών μπαρών. Χωρισμός σε σελίδες σε ξεχωριστό παράθυρο, PDF και μεγάλο PNG.",
+  "description": "Σταδιακή λήψη σελίδων, κεντράρισμα και ακριβής ένωση. Έλεγχος sticky bars, PDF και εικόνες με συμπίεση.",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage", "downloads", "unlimitedStorage"],
   "background": {"service_worker": "background.js"},
   "action": {"default_title": "Άνοιγμα ReaderCapture", "default_icon": {"16":"icons/icon-16.png","32":"icons/icon-32.png"}},

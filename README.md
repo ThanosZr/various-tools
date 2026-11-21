@@ -6,7 +6,8 @@ A collection of practical tools and utilities for documents, automation, enginee
 
 | Tool | Version | Description | Download |
 | --- | --- | --- | --- |
-| ReaderCapture | [0.2](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.2/reader-capture) | Continuous document capture with persistent toolbar exclusion, a separate page splitter, PDF and full-resolution PNG export. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.2.zip) |
+| ReaderCapture | [0.3](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.3/reader-capture) | Incremental page discovery, small scroll steps, centering and precise screenshot stitching around persistent bars. PDF and image export with compression. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.3.zip) |
+| ReaderCapture archive | [0.2](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.2/reader-capture) | Continuous document capture with a separate page splitter. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.2.zip) |
 | ReaderCapture archive | [0.1](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.1/reader-capture) | Previous page-by-page capture and visual calibration. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.1.zip) |
 
 ## Organization

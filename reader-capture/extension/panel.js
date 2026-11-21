@@ -6,19 +6,20 @@ import {canvasBlob,renderPage,thumb,hashBlob,blobDataURL} from './lib/image.js';
 import {PageBridge,friendlyError} from './lib/bridge.js';
 import {runBatch} from './lib/batch.js';
 import {captureScan} from './lib/scan-capture.js';
+import {capturePageWalk} from './lib/page-capture.js';
 import {getScan,listScans} from './lib/scan-store.js';
 
 const $=id=>document.getElementById(id);
-const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars','scanFirst','scanCount'];
+const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars','scanFirst','scanCount','captureMethod','walkMode','walkCount','walkStep'];
 const bridge=new PageBridge();
 let pages=[],target=null,busy=false,stopped=false,lastCapture=0,urls=[],selected=new Set(),saveTimer,selectionState=null,batchRunning=false,paused=false,lastScanId=null;
 const mb=n=>(n/1024/1024).toFixed(2)+' MB';
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
-function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','wait','rangeMode'].map(id=>[id,$(id).value])),lockRatio:$('lockRatio').checked,edgeSpeed:Number($('edgeSpeed').value),autoExcludeBars:$('autoExcludeBars').checked,returnPosition:$('returnPosition').checked};}
+function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','wait','rangeMode','walkMode'].map(id=>[id,$(id).value])),lockRatio:$('lockRatio').checked,edgeSpeed:Number($('edgeSpeed').value),walkStep:Number($('walkStep').value),autoExcludeBars:$('autoExcludeBars').checked,returnPosition:$('returnPosition').checked};}
 function config(){return {maxWidth:Number($('maxWidth').value)||0,quality:Number($('quality').value)/100,grayscale:$('grayscale').checked};}
 function selectedPages(){return pages.filter(p=>!selected.size||selected.has(p.id));}
-async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:3});}catch(e){reportError(e);}}
-function reportError(e){const partial=e.batch?` Κρατήθηκαν ${e.batch.added} σελίδες.`:'';status(friendlyError(e)+partial,true);$('errorDetails').hidden=false;$('errorText').textContent=`${e.code||'ERROR'}: ${e.message||e}\n${e.stack||''}`;}
+async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:4});}catch(e){reportError(e);}}
+function reportError(e){const partial=e.batch?` Κρατήθηκαν ${e.batch.added} σελίδες.`:Number.isInteger(e.completedPages)?` Κρατήθηκαν ${e.completedPages} πλήρεις σελίδες. Άνοιξέ τις με «Άνοιγμα διαχωρισμού».`:'';status(friendlyError(e)+partial,true);$('errorDetails').hidden=false;$('errorText').textContent=`${e.code||'ERROR'}: ${e.message||e}\n${e.stack||''}`;}
 function setBusy(value){busy=value;for(const el of document.querySelectorAll('button,input,select'))el.disabled=value;$('cancel').disabled=!value;$('scanCancel').disabled=!value;$('pause').disabled=!batchRunning;$('copyError').disabled=false;$('progress').hidden=!value;if(!value){$('progress').value=0;$('scanProgress').hidden=true;$('pause').disabled=true;}}
 async function task(fn){if(busy)return;stopped=false;try{setBusy(true);$('errorDetails').hidden=true;await fn();}catch(e){reportError(e);}finally{setBusy(false);}}
 function checkStop(){if(stopped)throw Object.assign(new Error('Η ενέργεια διακόπηκε. Οι ολοκληρωμένες σελίδες διατηρήθηκαν.'),{code:'STOPPED'});}
@@ -128,6 +129,7 @@ async function openSplitter(scanId){
   const url=chrome.runtime.getURL('splitter.html')+'?scan='+encodeURIComponent(id);await chrome.windows.create({url,type:'popup',width:1180,height:860});
 }
 async function startScan(){
+  if($('captureMethod').value==='pages')return startPageWalk();
   const t=await ensure(),operationOpts={...opts(),mode:'manual'},first=Number($('scanFirst').value)-1,count=Number($('scanCount').value);
   if(operationOpts.rangeMode==='repeat'&&(!Number.isInteger(first)||first<0||!Number.isInteger(count)||count<1||count>1000))throw new Error('Δώσε έγκυρη αρχή και πλήθος για το επαναλαμβανόμενο εύρος.');
   $('scanProgress').hidden=false;$('scanProgress').value=0;
@@ -137,6 +139,21 @@ async function startScan(){
   });
   $('scanStats').textContent=`Ενιαία εικόνα ${scan.width} × ${scan.savedHeight} px · ${scan.tiles.length} τμήματα.`;
   status('Η ενιαία εικόνα αποθηκεύτηκε. Ανοίγει ο διαχωρισμός σε σελίδες.');await openSplitter(scan.id);
+}
+function showCaptureMethod(){const pages=$('captureMethod').value==='pages';$('walkOptions').hidden=!pages;$('stripOptions').hidden=pages;$('scanStart').textContent=pages?'Λήψη σελίδων με μικρά βήματα':'Λήψη ενιαίας εικόνας';}
+async function startPageWalk(){
+  const t=await ensure(),operationOpts={...opts(),autoExcludeBars:true},count=Number($('walkCount').value);
+  $('scanProgress').hidden=false;$('scanProgress').value=0;
+  const scan=await capturePageWalk({opts:operationOpts,count,command:(op,extra={})=>command(op,{opts:operationOpts,...extra},t),screenshot:()=>screenshot(t),checkStop,
+    onSaved:s=>{lastScanId=s.id;chrome.storage.local.set({lastScanId:s.id}).catch(reportError);},
+    onProgress:p=>{
+      const names={search:'Αναζήτηση επόμενης σελίδας',loading:'Αναμονή να φορτωθεί η εικόνα',center:'Κεντράρισμα με μικρά βήματα',capture:'Λήψη ακάλυπτων τμημάτων',retry:'Σταθεροποίηση και επανάληψη της ίδιας σελίδας',saved:'Η σελίδα αποθηκεύτηκε'};
+      status(`${names[p.stage]} · ${p.completed}/${p.total} σελίδες`);$('scanProgress').value=(p.completed+(p.fraction||0))/p.total;
+      $('scanStats').textContent=`${p.completed} πλήρεις σελίδες${p.stage==='capture'?' · '+Math.round(p.fraction*100)+'% της τρέχουσας':''}`;
+    }
+  });
+  $('scanStats').textContent=`${scan.pages.length} πλήρεις σελίδες · ${scan.reason==='end'?'τέλος εγγράφου':'όριο πλήθους'}.`;
+  status('Οι σελίδες αποθηκεύτηκαν. Ανοίγει η προεπισκόπηση με τα όριά τους.');await openSplitter(scan.id);
 }
 async function reorder(index,delta){const other=index+delta;if(other<0||other>=pages.length)return;[pages[index],pages[other]]=[pages[other],pages[index]];pages.forEach((p,i)=>p.order=i);await replacePages(pages);await renderList();}
 async function renderList(){
@@ -264,6 +281,7 @@ $('visible').addEventListener('click',()=>task(()=>capturePage(true)));
 $('cancel').addEventListener('click',()=>{stopped=true;paused=false;status('Διακοπή και διατήρηση των ολοκληρωμένων σελίδων…');});
 $('batchStart').addEventListener('click',()=>task(startBatch));
 $('scanStart').addEventListener('click',()=>task(startScan));
+$('captureMethod').addEventListener('change',showCaptureMethod);
 $('scanCancel').addEventListener('click',()=>{stopped=true;status('Διακοπή. Τα ήδη αποθηκευμένα τμήματα διατηρούνται.');});
 $('openSplitter').addEventListener('click',()=>task(()=>openSplitter()));
 $('pickBar').addEventListener('click',()=>task(async()=>{await ensure();await command('pick',{kind:'bar'});status('Κάνε κλικ στη σταθερή μπάρα πάνω στην ιστοσελίδα.');}));
@@ -307,13 +325,14 @@ chrome.runtime.onMessage.addListener((m,sender)=>{
   if(m.type==='selection-cancelled')status('Η επιλογή περιοχής ακυρώθηκε.');
   if(m.type==='shortcut-capture'&&!busy)task(()=>capturePage(false));
 });
-window.addEventListener('beforeunload',()=>{if(busy&&target){command('end-strip',{},target).catch(()=>{});command(batchRunning?'end-run':'end',{},target).catch(()=>{});}});
+window.addEventListener('beforeunload',()=>{if(busy&&target){command('end-walk',{},target).catch(()=>{});command('end-strip',{},target).catch(()=>{});command(batchRunning?'end-run':'end',{},target).catch(()=>{});}});
 async function init(){
   setBusy(true);
   const [{settings={},settingsVersion,lastScanId:last},{target:t},stored]=await Promise.all([chrome.storage.local.get(['settings','settingsVersion','lastScanId']),chrome.storage.session.get('target'),allPages()]);lastScanId=last||null;
   for(const id of settingsIds)if(settings[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!settings[id];else $(id).value=settings[id];}
-  if(settingsVersion!==3)$('mode').value='manual';
+  if(![3,4].includes(settingsVersion))$('mode').value='manual';
   $('repeatRange').hidden=$('rangeMode').value!=='repeat';
+  showCaptureMethod();
   $('qualityLabel').textContent=$('quality').value+'%';target=t||null;pages=stored.sort((a,b)=>a.order-b.order);source();await renderList();
   if(target){try{await ensure();const s=await command('selection');if(s)showBounds(s);}catch{}}
   if(pages.length)status(`Ανακτήθηκαν ${pages.length} σελίδες της συλλογής σου.`);

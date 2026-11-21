@@ -2,7 +2,7 @@
 <html lang="el">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ReaderCapture</title><link rel="stylesheet" href="panel.css"></head>
 <body>
-  <header><div class="brand"><span class="logo">R</span><div><h1>ReaderCapture</h1><p>Ενιαία λήψη. Χωρισμός μετά.</p></div><span class="local">V0.2 · LOCAL</span></div></header>
+  <header><div class="brand"><span class="logo">R</span><div><h1>ReaderCapture</h1><p>Μικρά βήματα. Ολόκληρες σελίδες.</p></div><span class="local">V0.3 · LOCAL</span></div></header>
   <main>
     <section class="connection"><div class="eyebrow">ΕΓΓΡΑΦΟ ΣΤΟΝ BROWSER</div><p id="source">Πάτησε το εικονίδιο της επέκτασης στο έγγραφο.</p><button id="connect" class="subtle">Σύνδεση με ενεργή καρτέλα</button></section>
     <div id="status" role="status" aria-live="polite">Σχεδίασε την πρώτη σελίδα πάνω στο έγγραφο.</div>
@@ -22,15 +22,24 @@
       <details><summary>Κεφαλίδες και χρόνος φόρτωσης</summary><div class="fields"><label>Κεφαλίδα (px)<input id="topInset" type="number" value="0" min="0" max="2000"></label><label>Κάτω μπάρα (px)<input id="bottomInset" type="number" value="0" min="0" max="2000"></label><label>Αναμονή (ms)<input id="wait" type="number" value="450" min="80" max="3000" step="50"></label></div><p class="hint">Τα περιθώρια μετρώνται από τις άκρες της οθόνης. Για σταθερή κεφαλίδα 70 px, όρισε 70. Αν εμφανίζονται κενά, αύξησε την αναμονή.</p></details>
     </section>
     <section class="batch-section">
-      <div class="section-title"><span class="step">2</span><h2>Ενιαία εικόνα</h2></div>
+      <div class="section-title"><span class="step">2</span><h2>Λήψη εγγράφου</h2></div>
+      <label>Τρόπος λήψης<select id="captureMethod"><option value="pages">Σελίδα προς σελίδα · μικρά βήματα</option><option value="strip">Ενιαίο εύρος · τρόπος 0.2</option></select></label>
+      <div id="walkOptions">
+        <label>Όρια σελίδων<select id="walkMode"><option value="auto">Αυτόματος εντοπισμός κάθε σελίδας</option><option value="template">Δικό μου πρότυπο και επόμενη αρχή</option></select></label>
+        <div class="fields two"><label>Μέχρι πόσες σελίδες<input id="walkCount" type="number" min="1" max="1000" value="10"></label><label>Βήμα κύλισης (px)<input id="walkStep" type="number" min="32" max="400" value="140"></label></div>
+        <p class="hint">Ξεκινά από τη σελίδα που επέλεξες, ή την ορατή σελίδα αν δεν έχεις επιλογή. Κεντράρει τη σελίδα σε ακάλυπτο χώρο και περιμένει πριν το capture. Αν δεν χωρά, κρατά ακριβώς το υπόλοιπο και ενώνει τα τμήματα. Σταματά στο πλήθος ή στο τέλος του εγγράφου.</p>
+        <p class="hint">Ο έλεγχος για μπάρες είναι πάντα ενεργός. Για δικό σου πρότυπο όρισε μία σελίδα και την επόμενη αρχή στις προαιρετικές ρυθμίσεις. Η αναμονή ρυθμίζεται στις «Κεφαλίδες και χρόνος φόρτωσης».</p>
+      </div>
+      <div id="stripOptions" hidden>
       <label>Τι θα κρατήσει<select id="rangeMode"><option value="selection">Ολόκληρη τη σχεδιασμένη περιοχή</option><option value="end">Από την περιοχή μέχρι το τέλος της κύλισης</option><option value="repeat">Περιοχή σελίδας × το πλήθος που όρισα</option></select></label>
       <div id="repeatRange" class="fields two" hidden><label>Από θέση<input id="scanFirst" type="number" min="1" value="1"></label><label>Πλήθος σελίδων<input id="scanCount" type="number" min="1" max="1000" value="10"></label></div>
       <label class="checkbox"><input id="autoExcludeBars" type="checkbox" checked> Αυτόματος αποκλεισμός σταθερών μπαρών</label>
+      <p class="hint">Φορτώνει πρώτα το εύρος και το καταγράφει σε μία συνεχή εικόνα. Ο χωρισμός γίνεται μετά, σε ξεχωριστό παράθυρο.</p>
+      </div>
       <button id="pickBar" class="subtle">Σημείωσε μπάρα που δεν αναγνωρίζεται</button>
-      <p class="hint">Πρώτα φορτώνει το εύρος. Μετά ενώνει τα ακάλυπτα τμήματα σε μία εικόνα, χωρίς να ενσωματώνει τις μπάρες. Ο χωρισμός γίνεται μετά, σε ξεχωριστό παράθυρο.</p>
-      <button id="scanStart" class="primary big">Λήψη ενιαίας εικόνας</button>
+      <button id="scanStart" class="primary big">Λήψη σελίδων με μικρά βήματα</button>
       <div class="buttons"><button id="scanCancel" class="danger" disabled>Διακοπή λήψης</button><button id="openSplitter">Άνοιγμα διαχωρισμού</button></div>
-      <progress id="scanProgress" max="1" value="0" hidden></progress><p id="scanStats" class="hint">Η εικόνα αποθηκεύεται τοπικά στην ανάλυση προβολής.</p>
+      <progress id="scanProgress" max="1" value="0" hidden></progress><p id="scanStats" class="hint">Κάθε πλήρης σελίδα αποθηκεύεται πριν προχωρήσει στην επόμενη. Ο έλεγχος και η εξαγωγή ανοίγουν σε ξεχωριστό παράθυρο.</p>
     </section>
     <details class="legacy"><summary>Προαιρετικά: πρότυπο σελίδας και προηγούμενος τρόπος λήψης</summary>
     <section>

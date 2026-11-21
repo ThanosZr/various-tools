@@ -52,5 +52,5 @@ test('batch reaches each exact calibrated position and stops before an incomplet
   await assert.rejects(()=>v.send('prepare',{index:3}),{code:'PAGE_END'});await v.send('end-run');assert.equal(v.scroller.scrollTop,0);v.dispose();
 });
 test('reinjection disposes old listeners and ignores legacy installed flags',async()=>{
-  const v=makeViewer();await v.draw();v.ctx.__readerCaptureInstalled=true;v.reinject();assert.equal(v.messageHandlers.size,1);assert.equal((await v.send('ping')).version,'0.2.0');await v.draw();assert.ok(v.overlay());v.dispose();assert.equal(v.messageHandlers.size,0);
+  const v=makeViewer();await v.draw();v.ctx.__readerCaptureInstalled=true;v.reinject();assert.equal(v.messageHandlers.size,1);assert.equal((await v.send('ping')).version,'0.3.0');await v.draw();assert.ok(v.overlay());v.dispose();assert.equal(v.messageHandlers.size,0);
 });

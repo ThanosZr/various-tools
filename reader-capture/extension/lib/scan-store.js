@@ -10,3 +10,12 @@ export async function appendScanTile(scan,tile){
   const next={...scan,savedHeight:tile.y+tile.height,tiles:[...scan.tiles,{id:tile.id,y:tile.y,width:tile.width,height:tile.height}]};
   await transaction(['scans','tiles'],'readwrite',tx=>{tx.objectStore('tiles').put(tile);return tx.objectStore('scans').put(next);});Object.assign(scan,next);return scan;
 }
+// Commit every tile and its page boundary in one transaction. Cancellation or a
+// storage failure cannot leave half a page in an otherwise complete collection.
+export async function commitScanPage(scan,tiles,page){
+  let bottom=scan.savedHeight;
+  for(const t of tiles){if(t.y!==bottom||t.width!==scan.width||t.height<1)throw new Error('Μη συνεχόμενα τμήματα σελίδας.');bottom+=t.height;}
+  if(!tiles.length||page.top!==scan.savedHeight||page.bottom!==bottom)throw new Error('Μη έγκυρα όρια σελίδας.');
+  const next={...scan,height:bottom,savedHeight:bottom,tiles:[...scan.tiles,...tiles.map(({id,y,width,height})=>({id,y,width,height}))],pages:[...(scan.pages||[]),page],cuts:[...(scan.cuts||[0]),bottom]};
+  await transaction(['scans','tiles'],'readwrite',tx=>{for(const t of tiles)tx.objectStore('tiles').put(t);return tx.objectStore('scans').put(next);});Object.assign(scan,next);return scan;
+}
