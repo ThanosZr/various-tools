@@ -61,7 +61,7 @@ test('panel initializes, Draw really starts selection, N-page collection persist
   assert.equal(Number($('height').value),940);assert.equal($('mode').value,'manual');
   await click('measureGap');v.overlay().shadow.fire('wheel',{deltaY:900-v.scroller.scrollTop});v.overlay().surface.fire('pointerdown',{clientX:170,clientY:154});await v.flush();assert.match($('spacing').textContent,/964/);
   $('pageCount').value='3';await click('batchStart');assert.equal(stored.size,3);assert.equal(Number($('count').textContent),3);assert.match($('runStats').textContent,/3 λήψεις/);assert.equal($('errorDetails').hidden,true);
-  assert.equal(v.scroller.scrollTop,900);assert.equal(local.settingsVersion,4);
+  assert.equal(v.scroller.scrollTop,900);assert.equal(local.settingsVersion,5);
   await click('pdf');assert.ok(downloads[0].filename.endsWith('.pdf'));assert.match(Buffer.from(await downloads[0].blob.arrayBuffer()).toString('latin1'),/\/Count 3/);
   await click('images');assert.ok(downloads[1].filename.endsWith('.zip'));assert.equal(new DataView(await downloads[1].blob.arrayBuffer()).getUint32(0,true),0x04034b50);
   $('captureMethod').value='strip';$('rangeMode').value='repeat';$('scanCount').value='3';await click('scanStart');assert.equal($('errorDetails').hidden,true);assert.equal(popups.length,1);assert.equal(popups[0].type,'popup');

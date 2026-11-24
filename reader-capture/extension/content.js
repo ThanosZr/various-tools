@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION='0.3.0', SLOT='__readerCaptureController';
+  const VERSION='0.4.0', SLOT='__readerCaptureController';
   try { globalThis[SLOT]?.dispose(); } catch {}
   const removers=[];
   let model=null,view=null,mode='idle',gesture=null,gapPoint=null,capture=null,run=null,strip=null,walk=null,raf=0,lastTick=0,pickerOptions={},notifyTimer=0;
@@ -23,7 +23,8 @@
     const styleFor=el=>{if(!styles.has(el))styles.set(el,getComputedStyle(el));return styles.get(el);};
     // Inspect positioning, including painted children of transparent fixed wrappers.
     // Class names and ARIA roles are not reliable indicators of floating UI.
-    if(opts.autoExcludeBars!==false)for(const el of document.querySelectorAll('*')){
+    const reuse=walk?.fast&&walk.observer&&!walk.barsDirty&&walk.floatingElements,floating=reuse||new Set();
+    if(opts.autoExcludeBars!==false&&!reuse)for(const el of document.querySelectorAll('*')){
       if(owned(el)||el===t.root||within(t.root,el)||el===t.el)continue;
       const s=styleFor(el);if(s.display==='none'||s.visibility==='hidden'||s.opacity==='0')continue;
       let anchored=false;
@@ -33,9 +34,11 @@
       if(direct||painted||/^(IMG|CANVAS|VIDEO|IFRAME|BUTTON|INPUT|SELECT)$/.test(el.tagName)||(!el.children?.length&&el.textContent?.trim())){
         // A full-window transparent wrapper has no pixels of its own to omit.
         const r=el.getBoundingClientRect();if(direct&&!painted&&r.height>innerHeight*.7&&el.children?.length)continue;
-        elements.add(el);
+        floating.add(el);
       }
     }
+    if(walk?.fast&&walk.observer&&!reuse){walk.floatingElements=floating;walk.barsDirty=false;}
+    for(const el of floating)elements.add(el);
     for(const el of elements){
       if(!el.isConnected||owned(el))continue;const style=styleFor(el),r=box(el.getBoundingClientRect());
       if(style.display==='none'||style.visibility==='hidden'||style.opacity==='0'||r.height<2||r.width<2)continue;
@@ -54,7 +57,7 @@
       if(walk){const centered=await walkScroll(plan.scrollTop);if(!centered)return {pending:true};}else{scroll(root,root.scrollLeft,plan.scrollTop);await wait(clamp(Number(opts.wait)||450,80,3000));}
       const rect={...s.rect,x:s.rect.x-(root.scrollLeft-s.left),y:s.rect.y-(root.scrollTop-s.top)},row=rect.y+covered;
       const band=bandsFor({...t,rect},s.opts).find(b=>row>=b.y-.5&&row<b.y+b.height-.5);
-      if(band){s.band=band;s.covered=covered;s.maxRows=walk&&t.rect.height>band.height-16?walk.step*2:Infinity;return currentCapture();}
+      if(band){s.band=band;s.covered=covered;s.maxRows=walk&&!walk.fast&&t.rect.height>band.height-16?walk.step*2:Infinity;return currentCapture();}
     }
     throw fail('Η μπάρα αλλάζει θέση κατά τη λήψη. Αύξησε την αναμονή.','LAYOUT_CHANGED');
   }
@@ -209,7 +212,7 @@
     if(t.kind==='manual'&&Math.abs(geometry().scale-t.scale)>.002)throw fail('Η σελίδα άλλαξε μέγεθος. Επανάληψη λήψης…','VIEWPORT_CHANGED');
     const bands=bandsFor({...t,rect},s.opts);if(!bands.length)throw fail('Δεν υπάρχει αρκετό ακάλυπτο ύψος για λήψη.','OCCLUDED');let clip=s.band?bands.find(b=>Math.abs(b.y-s.band.y)<1&&Math.abs(b.height-s.band.height)<1):bands[0];if(!clip)throw fail('Μετακινήθηκε η σταθερή μπάρα.','LAYOUT_CHANGED');
     if(Number.isFinite(s.maxRows))clip={...clip,height:Math.min(clip.height,rect.y+(s.covered||0)+s.maxRows-clip.y)};
-    return {...info({...t,rect}),clip};
+    return {...info({...t,rect}),clip,clips:bands,position:{top:t.root.scrollTop,left:t.root.scrollLeft}};
   }
   function endCapture(restore=true){if(!capture)return {ok:true};const s=capture;capture=null;clearTimeout(s.timer);if(restore)restorePosition(s.position);if(!run&&!strip&&!walk)hideOverlay(false);return {ok:true};}
   function stripTarget(){
@@ -237,6 +240,20 @@
     }
     return samples;
   }
+  async function settleWalk(w,target=w.current){
+    if(!w.fast){await wait(clamp(Number(w.opts.wait)||450,80,3000));checkWalk();return;}
+    const signature=()=>{
+      const rect=target?.el?.isConnected?box(target.el.getBoundingClientRect()):target?screenRect(target.local,w.root):{x:w.x,y:0,width:w.width,height:1};
+      const bands=bandsFor({root:w.root,el:target?.el,rect},w.opts);
+      return JSON.stringify([w.root.scrollTop,w.root.scrollLeft,w.root.scrollHeight,rect,bands]);
+    };
+    const deadline=Date.now()+clamp(Number(w.opts.wait)||450,80,3000);let previous=signature(),stable=0;
+    for(;;){
+      await wait(16);checkWalk();const current=signature();stable=current===previous?stable+1:0;previous=current;
+      if(stable>=2)return;
+      if(Date.now()>=deadline)throw fail('Η προβολή δεν σταθεροποιήθηκε. Δοκίμασε «Προσεκτική λήψη» ή μεγαλύτερη αναμονή.','LAYOUT_CHANGED');
+    }
+  }
   async function walkScroll(top){
     const w=checkWalk(),root=w.root,before=motionSamples(w),previous=root.scrollTop;
     // Keep successive viewports on the same device-pixel grid. Fractional CSS
@@ -245,7 +262,7 @@
     let left=root.scrollLeft,centered=true;
     if(w.current){const c=clipFor(root),r=screenRect(w.current.local,root),maxLeft=Math.max(0,(root.scrollWidth||root.clientWidth)-root.clientWidth),desired=clamp(left+r.x+r.width/2-c.x-c.width/2,0,maxLeft);centered=Math.abs(desired-left)<=w.step+.5;left=clamp(desired,left-w.step,left+w.step);}
     scroll(root,Math.round(left*w.dpr)/w.dpr,clamp(aligned,0,max));
-    await wait(clamp(Number(w.opts.wait)||450,80,3000));checkWalk();
+    await settleWalk(w);checkWalk();
     if(Math.abs(root.scrollTop-previous)>=16)for(const [el,r]of before){
       if(!el.isConnected)continue;const now=el.getBoundingClientRect();
       if(Math.abs(now.y-r.y)<1&&Math.abs(now.x-r.x)<1&&Math.abs(now.width-r.width)<1&&Math.abs(now.height-r.height)<1)w.motionBars.add(el);
@@ -258,15 +275,19 @@
     const template=opts.walkMode==='template';if(template&&(!model||!model.calibrated))throw fail('Για δικό σου πρότυπο, σχεδίασε μία σελίδα και όρισε την επόμενη αρχή.','NOT_CALIBRATED');
     const seed=model?{...manualTarget(0),el:model.ref}:getTarget({mode:'auto'}),root=seed.root;
     const ref=!template&&seed.el?.isConnected?box(seed.el.getBoundingClientRect()):seed.rect;
-    const local=localRect(ref,root),c=clipFor(root),step=clamp(Number(opts.walkStep)||140,32,Math.min(400,Math.max(32,c.height/2)));
-    walk={root,position:rememberPosition(root),opts:{...opts,autoExcludeBars:true},template,cursor:local.y,width:ref.width,x:ref.x,step,count:0,steps:0,current:null,cancelled:false,stalled:0,lastHeight:0,loading:0,probe:0,probeTop:root.scrollTop,rewinding:root.scrollTop>local.y+step,motionBars:new Set(),vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio};
+    const local=localRect(ref,root),c=clipFor(root),baseStep=clamp(Number(opts.walkStep)||140,32,Math.min(400,Math.max(32,c.height/2))),fast=opts.walkSpeed!=='careful',step=baseStep*(fast?10:1);
+    walk={root,position:rememberPosition(root),opts:{...opts,autoExcludeBars:true},template,cursor:local.y,width:ref.width,x:ref.x,fast,step,probeStep:baseStep,searchStep:Math.min(c.height/2,step),count:0,steps:0,current:null,cancelled:false,stalled:0,lastHeight:0,loading:0,loadSince:0,probe:0,probeTop:root.scrollTop,rewinding:root.scrollTop>local.y+baseStep,motionBars:new Set(),barsDirty:true,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio};
+    if(fast&&typeof MutationObserver!=='undefined'){
+      const w=walk;w.observer=new MutationObserver(records=>{if(records.some(r=>!owned(r.target)))w.barsDirty=true;});
+      w.observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden']});
+    }
     hideOverlay(true);return info({...seed,rect:ref});
   }
   async function walkNext(){
     const w=checkWalk(),root=w.root,c=clipFor(root);if(w.current)throw fail('Η τρέχουσα σελίδα δεν έχει ολοκληρωθεί.');
     // A short out-and-back probe distinguishes document content from UI kept
     // stationary by JavaScript, even before the first screenshot is accepted.
-    if(w.probe<2){const max=Math.max(0,root.scrollHeight-root.clientHeight),next=w.probe===0?(max-root.scrollTop>=16?Math.min(max,root.scrollTop+w.step):Math.max(0,root.scrollTop-w.step)):w.probeTop;w.probe++;await walkScroll(next);return {state:'search',steps:w.steps};}
+    if(w.probe<2){const max=Math.max(0,root.scrollHeight-root.clientHeight),next=w.probe===0?(max-root.scrollTop>=16?Math.min(max,root.scrollTop+w.probeStep):Math.max(0,root.scrollTop-w.probeStep)):w.probeTop;w.probe++;await walkScroll(next);return {state:'search',steps:w.steps};}
     let target;
     if(w.template){
       const t=manualTarget(w.count);if(t.local.y+t.local.height<=root.scrollHeight+2)target=t;
@@ -277,12 +298,14 @@
       if(found)target={el:found.el,root,rect:found.rect,local:found.local,kind:'element',label:found.el.getAttribute('data-page-number')||found.el.getAttribute('data-page-no')||String(w.count+1)};
     }
     if(target){
-      await wait(clamp(Number(w.opts.wait)||450,80,3000));checkWalk();
+      await settleWalk(w,target);checkWalk();
       const actual=target.el?box(target.el.getBoundingClientRect()):manualTarget(w.count).rect;
-      if(Math.abs(actual.width-target.rect.width)>1||Math.abs(actual.height-target.rect.height)>1||Math.abs(actual.y-target.rect.y)>1){if(++w.loading>30)throw fail('Η διάταξη της σελίδας δεν σταθεροποιείται. Αύξησε την αναμονή.','PAGE_NOT_READY');return {state:'search',steps:w.steps};}
+      if(!w.loadSince)w.loadSince=Date.now();
+      const loadExpired=()=>w.fast?Date.now()-w.loadSince>Math.max(3000,(Number(w.opts.wait)||450)*30):++w.loading>30;
+      if(Math.abs(actual.width-target.rect.width)>1||Math.abs(actual.height-target.rect.height)>1||Math.abs(actual.y-target.rect.y)>1){if(loadExpired())throw fail('Η διάταξη της σελίδας δεν σταθεροποιείται. Αύξησε την αναμονή.','PAGE_NOT_READY');return {state:'search',steps:w.steps};}
       const images=target.el?.querySelectorAll?.('img')||[];
-      if(document.fonts?.status==='loading'||[...images].some(im=>(im.currentSrc||im.getAttribute('src'))&&(!im.complete||im.naturalWidth===0))){if(++w.loading>30)throw fail('Δεν φορτώθηκαν οι εικόνες ή οι γραμματοσειρές της σελίδας. Αύξησε την αναμονή ή φόρτωσέ τη πρώτα χειροκίνητα.','PAGE_NOT_READY');return {state:'loading',steps:w.steps};}
-      w.loading=0;w.current=target;
+      if(document.fonts?.status==='loading'||[...images].some(im=>(im.currentSrc||im.getAttribute('src'))&&(!im.complete||im.naturalWidth===0))){if(loadExpired())throw fail('Δεν φορτώθηκαν οι εικόνες ή οι γραμματοσειρές της σελίδας. Αύξησε την αναμονή ή φόρτωσέ τη πρώτα χειροκίνητα.','PAGE_NOT_READY');return {state:'loading',steps:w.steps};}
+      w.loading=0;w.loadSince=0;w.current=target;w.barsDirty=true;
       capture={target,rect:{...target.rect},left:root.scrollLeft,top:root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts:w.opts,cancelled:false,position:w.position};
       capture.timer=setTimeout(()=>endCapture(false),300000);
       return {state:'page',...currentCapture(),steps:w.steps};
@@ -292,14 +315,14 @@
     if(w.stalled>=3){if(!w.count)throw fail('Δεν εντοπίστηκαν όρια σελίδας. Διάλεξε «Δικό μου πρότυπο» και όρισε την επόμενη αρχή.','NO_PAGE');return {state:'end',pages:w.count};}
     const visibleTop=localRect({x:c.x,y:c.y,width:1,height:1},root).y;
     if(visibleTop<=w.cursor)w.rewinding=false;
-    await walkScroll(root.scrollTop+(w.rewinding?-w.step:w.step));
+    await walkScroll(root.scrollTop+(w.rewinding?-w.searchStep:w.searchStep));
     return {state:'search',steps:w.steps,pages:w.count};
   }
   function commitWalkPage(){
     const w=checkWalk();if(!w.current)throw fail('Δεν υπάρχει τρέχουσα σελίδα.');currentCapture();
     w.cursor=w.current.local.y+w.current.local.height;w.count++;w.current=null;endCapture(false);return {pages:w.count};
   }
-  function endWalk(restore=true){endCapture(false);const w=walk;walk=null;if(restore&&w)restorePosition(w.position);hideOverlay(false);repaint();return {ok:true};}
+  function endWalk(restore=true){endCapture(false);const w=walk;w?.observer?.disconnect();walk=null;if(restore&&w)restorePosition(w.position);hideOverlay(false);repaint();return {ok:true};}
   async function prepare(index,opts){
     let previous=-1,stable=0;
     for(let n=0;n<6;n++){const t=manualTarget(index),root=t.root,c=clipFor(root),top=Math.max(c.y,Number(opts.topInset)||0)+24;scroll(root,root.scrollLeft,root.scrollTop+t.rect.y-top);await wait(clamp(Number(opts.wait)||450,80,3000));const current=manualTarget(index),bottom=current.local.y+current.local.height;if(bottom<=root.scrollHeight+2)return info(current);if(root.scrollHeight===previous)stable++;else stable=0;previous=root.scrollHeight;if(stable>=2)break;}

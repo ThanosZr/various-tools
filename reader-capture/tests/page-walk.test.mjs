@@ -21,7 +21,7 @@ async function setup({nested=false,heights=[940,940,940],gaps=[24,24],bar=true,d
     v.addBar({x:0,y:0,width:1000,height:64});
   }
   const metadata=new Map(),tiles=new Map(),operations=[],moves=[],shots=[];
-  const opts={walkMode:'auto',walkStep:220,autoExcludeBars:true,topInset:0,bottomInset:0,wait:80,returnPosition:true};
+  const opts={walkMode:'auto',walkSpeed:'careful',walkStep:220,autoExcludeBars:true,topInset:0,bottomInset:0,wait:80,returnPosition:true};
   const command=async(op,extra={})=>{operations.push(op);const before=v.scroller.scrollTop,r=await v.send(op,{opts,...extra});if(op==='move'||op==='walk-next')moves.push(Math.abs(v.scroller.scrollTop-before));return r;};
   const screenshot=async()=>{
     const c=createCanvas(1000*dpr,700*dpr),ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.fillStyle='#eeeeee';ctx.fillRect(0,0,1000,700);
@@ -116,4 +116,32 @@ test('an initial scroll probe detects UI held stationary by script before the fi
   const b=f.v.addBar({x:0,y:350,width:1000,height:38});b.tagName='DIV';b.position='absolute';b.style.backgroundColor='rgb(0, 255, 0)';
   try{const scan=await capturePageWalk({...f,count:1});assert.ok(f.operations.filter(op=>op==='walk-next').length>=3);await equalPixels(f,scan,0);assert.equal(f.v.scroller.scrollTop,0);}
   finally{f.v.dispose();}
+});
+test('fast snapshots fill several visible bands, merge by saved position and reduce the number of screenshots',async()=>{
+  const slow=await setup(),fast=await setup();fast.opts.walkSpeed='fast';slow.opts.walkStep=fast.opts.walkStep=140;
+  try{
+    const a=await capturePageWalk({...slow,count:3}),b=await capturePageWalk({...fast,count:3});
+    assert.deepEqual(b.cuts,a.cuts);assert.ok(fast.shots.length<slow.shots.length,`${fast.shots.length} fast vs ${slow.shots.length} careful frames`);
+    assert.ok(b.tiles.some(t=>t.source?.position),'every captured piece retains its original screen position');
+    for(let i=0;i<3;i++)await equalPixels(fast,b,i);
+  }finally{slow.v.dispose();fast.v.dispose();}
+});
+test('fast capture preserves exact pixels at fractional DPR and variable page heights',async()=>{
+  for(const dpr of [1,1.25,2]){
+    const f=await setup({dpr,heights:[940,1110,700],gaps:[85,17]});f.opts.walkSpeed='fast';
+    try{const scan=await capturePageWalk({...f,count:3});for(let i=0;i<3;i++)await equalPixels(f,scan,i);assert.deepEqual(scan.pages.map(p=>p.bottom-p.top),[940,1110,700].map(n=>Math.round(n*dpr)));}
+    finally{f.v.dispose();}
+  }
+});
+test('fast capture rejects every provisional band if a toolbar moves during that screenshot',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let changed=false,retries=0;
+  try{const original=f.screenshot,scan=await capturePageWalk({...f,count:1,screenshot:async()=>{const im=await original();if(!changed){changed=true;f.v.bars[0].getBoundingClientRect=()=>({x:0,y:250,width:1000,height:38});}return im;},onProgress:p=>{if(p.stage==='retry')retries++;}});assert.equal(retries,1);await equalPixels(f,scan,0);}
+  finally{f.v.dispose();}
+});
+test('cancelling fast out-of-order capture retains only the complete previous page',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let stopped=false;
+  try{
+    await assert.rejects(()=>capturePageWalk({...f,count:3,onProgress:p=>{if(p.stage==='capture'&&p.completed===1)stopped=true;},checkStop:()=>{if(stopped)throw new Error('stopped');}}),/stopped/);
+    const scan=[...f.metadata.values()][0];assert.equal(scan.pages.length,1);assert.equal(scan.savedHeight,940);assert.deepEqual(scan.cuts,[0,940]);await equalPixels(f,scan,0);assert.equal(f.v.scroller.scrollTop,160);
+  }finally{f.v.dispose();}
 });

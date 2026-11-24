@@ -1,12 +1,13 @@
 {
   "name": "readercapture",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/core.test.mjs tests/batch.test.mjs tests/calibration.test.mjs",
     "test:content": "node --test tests/content.test.mjs",
     "test:browser": "node tests/browser.mjs",
+    "benchmark": "node tests/benchmark.mjs",
     "test:all": "node --test tests/*.test.mjs"
   },
   "devDependencies": {

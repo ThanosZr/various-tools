@@ -10,15 +10,15 @@ import {capturePageWalk} from './lib/page-capture.js';
 import {getScan,listScans} from './lib/scan-store.js';
 
 const $=id=>document.getElementById(id);
-const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars','scanFirst','scanCount','captureMethod','walkMode','walkCount','walkStep'];
+const settingsIds=['mode','width','height','gap','topInset','bottomInset','wait','title','preset','maxWidth','quality','paper','imageFormat','grayscale','overlap','lockRatio','edgeSpeed','batchMode','startPage','pageCount','autoExport','returnPosition','rangeMode','autoExcludeBars','scanFirst','scanCount','captureMethod','walkMode','walkCount','walkStep','walkSpeed'];
 const bridge=new PageBridge();
 let pages=[],target=null,busy=false,stopped=false,lastCapture=0,urls=[],selected=new Set(),saveTimer,selectionState=null,batchRunning=false,paused=false,lastScanId=null;
 const mb=n=>(n/1024/1024).toFixed(2)+' MB';
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
-function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','wait','rangeMode','walkMode'].map(id=>[id,$(id).value])),lockRatio:$('lockRatio').checked,edgeSpeed:Number($('edgeSpeed').value),walkStep:Number($('walkStep').value),autoExcludeBars:$('autoExcludeBars').checked,returnPosition:$('returnPosition').checked};}
+function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','wait','rangeMode','walkMode','walkSpeed'].map(id=>[id,$(id).value])),lockRatio:$('lockRatio').checked,edgeSpeed:Number($('edgeSpeed').value),walkStep:Number($('walkStep').value),autoExcludeBars:$('autoExcludeBars').checked,returnPosition:$('returnPosition').checked};}
 function config(){return {maxWidth:Number($('maxWidth').value)||0,quality:Number($('quality').value)/100,grayscale:$('grayscale').checked};}
 function selectedPages(){return pages.filter(p=>!selected.size||selected.has(p.id));}
-async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:4});}catch(e){reportError(e);}}
+async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:5});}catch(e){reportError(e);}}
 function reportError(e){const partial=e.batch?` Κρατήθηκαν ${e.batch.added} σελίδες.`:Number.isInteger(e.completedPages)?` Κρατήθηκαν ${e.completedPages} πλήρεις σελίδες. Άνοιξέ τις με «Άνοιγμα διαχωρισμού».`:'';status(friendlyError(e)+partial,true);$('errorDetails').hidden=false;$('errorText').textContent=`${e.code||'ERROR'}: ${e.message||e}\n${e.stack||''}`;}
 function setBusy(value){busy=value;for(const el of document.querySelectorAll('button,input,select'))el.disabled=value;$('cancel').disabled=!value;$('scanCancel').disabled=!value;$('pause').disabled=!batchRunning;$('copyError').disabled=false;$('progress').hidden=!value;if(!value){$('progress').value=0;$('scanProgress').hidden=true;$('pause').disabled=true;}}
 async function task(fn){if(busy)return;stopped=false;try{setBusy(true);$('errorDetails').hidden=true;await fn();}catch(e){reportError(e);}finally{setBusy(false);}}
@@ -38,7 +38,7 @@ async function screenshot(t){
   // captureVisibleTab uses the ACTIVE tab, so check both sides of each call.
   const verify=async()=>{const [tab]=await chrome.tabs.query({active:true,windowId:t.windowId});if(tab?.id!==t.id)throw new Error('Άλλαξε η ενεργή καρτέλα. Η λήψη ακυρώθηκε.');};
   await verify();checkStop();
-  await new Promise(r=>setTimeout(r,Math.max(0,650-(Date.now()-lastCapture))));
+  await new Promise(r=>setTimeout(r,Math.max(0,520-(Date.now()-lastCapture))));
   await verify();checkStop();lastCapture=Date.now();
   const data=await chrome.tabs.captureVisibleTab(t.windowId,{format:'png'});
   await verify();checkStop();return createImageBitmap(await (await fetch(data)).blob());
@@ -140,19 +140,19 @@ async function startScan(){
   $('scanStats').textContent=`Ενιαία εικόνα ${scan.width} × ${scan.savedHeight} px · ${scan.tiles.length} τμήματα.`;
   status('Η ενιαία εικόνα αποθηκεύτηκε. Ανοίγει ο διαχωρισμός σε σελίδες.');await openSplitter(scan.id);
 }
-function showCaptureMethod(){const pages=$('captureMethod').value==='pages';$('walkOptions').hidden=!pages;$('stripOptions').hidden=pages;$('scanStart').textContent=pages?'Λήψη σελίδων με μικρά βήματα':'Λήψη ενιαίας εικόνας';}
+function showCaptureMethod(){const pages=$('captureMethod').value==='pages';$('walkOptions').hidden=!pages;$('stripOptions').hidden=pages;$('scanStart').textContent=pages?($('walkSpeed').value==='careful'?'Λήψη σελίδων με μικρά βήματα':'Γρήγορη λήψη σελίδων'):'Λήψη ενιαίας εικόνας';}
 async function startPageWalk(){
   const t=await ensure(),operationOpts={...opts(),autoExcludeBars:true},count=Number($('walkCount').value);
   $('scanProgress').hidden=false;$('scanProgress').value=0;
   const scan=await capturePageWalk({opts:operationOpts,count,command:(op,extra={})=>command(op,{opts:operationOpts,...extra},t),screenshot:()=>screenshot(t),checkStop,
     onSaved:s=>{lastScanId=s.id;chrome.storage.local.set({lastScanId:s.id}).catch(reportError);},
     onProgress:p=>{
-      const names={search:'Αναζήτηση επόμενης σελίδας',loading:'Αναμονή να φορτωθεί η εικόνα',center:'Κεντράρισμα με μικρά βήματα',capture:'Λήψη ακάλυπτων τμημάτων',retry:'Σταθεροποίηση και επανάληψη της ίδιας σελίδας',saved:'Η σελίδα αποθηκεύτηκε'};
+      const names={search:'Αναζήτηση επόμενης σελίδας',loading:'Αναμονή να φορτωθεί η εικόνα',center:'Μετακίνηση στην επόμενη θέση',capture:'Λήψη ακάλυπτων τμημάτων',retry:'Σταθεροποίηση και επανάληψη της ίδιας σελίδας',saved:'Η σελίδα αποθηκεύτηκε'};
       status(`${names[p.stage]} · ${p.completed}/${p.total} σελίδες`);$('scanProgress').value=(p.completed+(p.fraction||0))/p.total;
       $('scanStats').textContent=`${p.completed} πλήρεις σελίδες${p.stage==='capture'?' · '+Math.round(p.fraction*100)+'% της τρέχουσας':''}`;
     }
   });
-  $('scanStats').textContent=`${scan.pages.length} πλήρεις σελίδες · ${scan.reason==='end'?'τέλος εγγράφου':'όριο πλήθους'}.`;
+  $('scanStats').textContent=`${scan.pages.length} πλήρεις σελίδες · ${(scan.performance.elapsedMs/1000).toFixed(1)} s · ${scan.performance.frames} screenshots · ${scan.reason==='end'?'τέλος εγγράφου':'όριο πλήθους'}.`;
   status('Οι σελίδες αποθηκεύτηκαν. Ανοίγει η προεπισκόπηση με τα όριά τους.');await openSplitter(scan.id);
 }
 async function reorder(index,delta){const other=index+delta;if(other<0||other>=pages.length)return;[pages[index],pages[other]]=[pages[other],pages[index]];pages.forEach((p,i)=>p.order=i);await replacePages(pages);await renderList();}
@@ -282,6 +282,7 @@ $('cancel').addEventListener('click',()=>{stopped=true;paused=false;status('Δι
 $('batchStart').addEventListener('click',()=>task(startBatch));
 $('scanStart').addEventListener('click',()=>task(startScan));
 $('captureMethod').addEventListener('change',showCaptureMethod);
+$('walkSpeed').addEventListener('change',showCaptureMethod);
 $('scanCancel').addEventListener('click',()=>{stopped=true;status('Διακοπή. Τα ήδη αποθηκευμένα τμήματα διατηρούνται.');});
 $('openSplitter').addEventListener('click',()=>task(()=>openSplitter()));
 $('pickBar').addEventListener('click',()=>task(async()=>{await ensure();await command('pick',{kind:'bar'});status('Κάνε κλικ στη σταθερή μπάρα πάνω στην ιστοσελίδα.');}));
@@ -330,7 +331,7 @@ async function init(){
   setBusy(true);
   const [{settings={},settingsVersion,lastScanId:last},{target:t},stored]=await Promise.all([chrome.storage.local.get(['settings','settingsVersion','lastScanId']),chrome.storage.session.get('target'),allPages()]);lastScanId=last||null;
   for(const id of settingsIds)if(settings[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!settings[id];else $(id).value=settings[id];}
-  if(![3,4].includes(settingsVersion))$('mode').value='manual';
+  if(![3,4,5].includes(settingsVersion))$('mode').value='manual';
   $('repeatRange').hidden=$('rangeMode').value!=='repeat';
   showCaptureMethod();
   $('qualityLabel').textContent=$('quality').value+'%';target=t||null;pages=stored.sort((a,b)=>a.order-b.order);source();await renderList();
