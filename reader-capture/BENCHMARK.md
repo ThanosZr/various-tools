@@ -10,4 +10,16 @@
 
 Εκτέλεση: `npm run benchmark`, με εγκατεστημένο Playwright / Chromium και το ιστορικό Git. Εναλλακτικά, `READERCAPTURE_BASELINE_DIR` δείχνει σε επαληθευμένο checkout της 0.3. Το JSON αποτέλεσμα γράφεται στο `test-output/benchmark.json` και στα logs του GitHub Actions.
 
-Η [εντολή captureVisibleTab του Chrome](https://developer.chrome.com/docs/extensions/reference/api/tabs#property-MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND) έχει όριο 2 screenshots/s. Οι χρόνοι επηρεάζονται από υλικό, μέγεθος και διάταξη εγγράφου, μπάρες και φόρτωση. Τα αριθμητικά αποτελέσματα της συγκεκριμένης εκτέλεσης προστίθενται μετά την ολοκλήρωση του CI.
+Η [εντολή captureVisibleTab του Chrome](https://developer.chrome.com/docs/extensions/reference/api/tabs#property-MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND) έχει όριο 2 screenshots/s. Οι χρόνοι επηρεάζονται από υλικό, μέγεθος και διάταξη εγγράφου, μπάρες και φόρτωση. 
+
+## Επιβεβαιωμένη εκτέλεση
+
+[GitHub Actions](https://github.com/ThanosZr/various-tools/actions/runs/45443778990), κώδικας `39529eb20d9b64a9186e8dc66e4bce74f294766b`. Πέρασαν οι 50 δοκιμές, το κύριο σενάριο Chromium και ο συγκριτικός έλεγχος.
+
+| Μέτρηση | 0.3 | 0.4 | Αποτέλεσμα |
+| --- | ---: | ---: | --- |
+| Συνολική λήψη | 21.154 s | 9.721 s | 2.18× ταχύτερη |
+| Κύλιση και σταθεροποίηση | 13.053 s | 0.708 s | 18.4× ταχύτερη |
+| Screenshots | 13 | 9 | 30.8% λιγότερα |
+
+Και οι τρεις τελικές εικόνες ταυτίστηκαν pixel προς pixel. Η συνολική επιτάχυνση της εκτέλεσης είναι 2.18×, ενώ η κύλιση / σταθεροποίηση ξεπέρασε τον στόχο 10×. Τα πλήρη δεδομένα διατηρούνται στο benchmarks/chromium-0.4.json.

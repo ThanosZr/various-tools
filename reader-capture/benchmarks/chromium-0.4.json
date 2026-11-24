@@ -1,0 +1,26 @@
+{
+  "baselineCommit": "0bf19325fe1509076c693e495cfc9c3ae9c7b7e5",
+  "fixture": "3 pages, 660 × 940 CSS px, fixed wrapper + scripted floating bar, 1180 × 760 viewport, default 450 ms wait",
+  "baseline": {
+    "version": "0.3",
+    "elapsedMs": 21154,
+    "frames": 13,
+    "scrollAndSettleMs": 13053,
+    "scheduledWaitMs": 13050
+  },
+  "current": {
+    "version": "0.4",
+    "elapsedMs": 9721,
+    "frames": 9,
+    "scrollAndSettleMs": 708,
+    "scheduledWaitMs": 704
+  },
+  "speedup": {
+    "total": 2.176113568562905,
+    "scrollAndSettle": 18.4364406779661,
+    "scheduledWait": 18.536931818181817
+  },
+  "pixelEquality": true,
+  "validatedCodeCommit": "39529eb20d9b64a9186e8dc66e4bce74f294766b",
+  "workflow": "https://github.com/ThanosZr/various-tools/actions/runs/45443778990"
+}
