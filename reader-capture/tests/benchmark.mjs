@@ -15,7 +15,8 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http
 async function baselineDirectory(){
   if(process.env.READERCAPTURE_BASELINE_DIR)return path.resolve(process.env.READERCAPTURE_BASELINE_DIR);
   const destination=path.join(temp,'baseline');await mkdir(destination);
-  const archive=execFileSync('git',['archive',BASELINE,'reader-capture'],{cwd:root,maxBuffer:16000000});
+  const gitRoot=execFileSync('git',['rev-parse','--show-toplevel'],{cwd:root,encoding:'utf8'}).trim();
+  const archive=execFileSync('git',['archive',BASELINE,'reader-capture'],{cwd:gitRoot,maxBuffer:16000000});
   execFileSync('tar',['-x','-C',destination],{input:archive});return path.join(destination,'reader-capture');
 }
 async function measure(label,directory){
