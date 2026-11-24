@@ -3,7 +3,7 @@ import {makePDF} from './lib/pdf.js';
 import {makeZIP} from './lib/zip.js';
 import {allPages,putPage,deletePage,clearPages,replacePages} from './lib/db.js';
 import {canvasBlob,renderPage,thumb,hashBlob,blobDataURL} from './lib/image.js';
-import {PageBridge,friendlyError} from './lib/bridge.js';
+import {PageBridge,friendlyError,VERSION} from './lib/bridge.js';
 import {runBatch} from './lib/batch.js';
 import {captureScan} from './lib/scan-capture.js';
 import {capturePageWalk} from './lib/page-capture.js';
@@ -19,7 +19,7 @@ function opts(){return {...Object.fromEntries(['mode','topInset','bottomInset','
 function config(){return {maxWidth:Number($('maxWidth').value)||0,quality:Number($('quality').value)/100,grayscale:$('grayscale').checked};}
 function selectedPages(){return pages.filter(p=>!selected.size||selected.has(p.id));}
 async function saveSettings(){try{const s={};for(const id of settingsIds){const el=$(id);if(el)s[id]=el.type==='checkbox'?el.checked:el.value;}await chrome.storage.local.set({settings:s,settingsVersion:5});}catch(e){reportError(e);}}
-function reportError(e){const partial=e.batch?` Κρατήθηκαν ${e.batch.added} σελίδες.`:Number.isInteger(e.completedPages)?` Κρατήθηκαν ${e.completedPages} πλήρεις σελίδες. Άνοιξέ τις με «Άνοιγμα διαχωρισμού».`:'';status(friendlyError(e)+partial,true);$('errorDetails').hidden=false;$('errorText').textContent=`${e.code||'ERROR'}: ${e.message||e}\n${e.stack||''}`;}
+function reportError(e){const partial=e.batch?` Κρατήθηκαν ${e.batch.added} σελίδες.`:Number.isInteger(e.completedPages)?` Κρατήθηκαν ${e.completedPages} πλήρεις σελίδες.${e.completedPages?' Άνοιξέ τις με «Άνοιγμα διαχωρισμού».':''}`:'';status(friendlyError(e)+partial,true);$('errorDetails').hidden=false;$('errorText').textContent=`ReaderCapture ${VERSION}\n${e.code||'ERROR'}: ${e.message||e}${e.phase?'\nΣτάδιο: '+e.phase+' · προσπάθειες: '+e.attempts:''}\n${e.stack||''}`;}
 function setBusy(value){busy=value;for(const el of document.querySelectorAll('button,input,select'))el.disabled=value;$('cancel').disabled=!value;$('scanCancel').disabled=!value;$('pause').disabled=!batchRunning;$('copyError').disabled=false;$('progress').hidden=!value;if(!value){$('progress').value=0;$('scanProgress').hidden=true;$('pause').disabled=true;}}
 async function task(fn){if(busy)return;stopped=false;try{setBusy(true);$('errorDetails').hidden=true;await fn();}catch(e){reportError(e);}finally{setBusy(false);}}
 function checkStop(){if(stopped)throw Object.assign(new Error('Η ενέργεια διακόπηκε. Οι ολοκληρωμένες σελίδες διατηρήθηκαν.'),{code:'STOPPED'});}
@@ -148,7 +148,7 @@ async function startPageWalk(){
     onSaved:s=>{lastScanId=s.id;chrome.storage.local.set({lastScanId:s.id}).catch(reportError);},
     onProgress:p=>{
       const names={search:'Αναζήτηση επόμενης σελίδας',loading:'Αναμονή να φορτωθεί η εικόνα',center:'Μετακίνηση στην επόμενη θέση',capture:'Λήψη ακάλυπτων τμημάτων',retry:'Σταθεροποίηση και επανάληψη της ίδιας σελίδας',saved:'Η σελίδα αποθηκεύτηκε'};
-      status(`${names[p.stage]} · ${p.completed}/${p.total} σελίδες`);$('scanProgress').value=(p.completed+(p.fraction||0))/p.total;
+      status(p.stage==='retry'?`Επανάληψη ${p.attempt}/${p.maxRetries} της ίδιας σελίδας${p.mode==='careful'?' · αυτόματη προσεκτική προσπάθεια':' · περισσότερος χρόνος σταθεροποίησης'} · ${p.completed}/${p.total} σελίδες`:`${names[p.stage]} · ${p.completed}/${p.total} σελίδες`);$('scanProgress').value=(p.completed+(p.fraction||0))/p.total;
       $('scanStats').textContent=`${p.completed} πλήρεις σελίδες${p.stage==='capture'?' · '+Math.round(p.fraction*100)+'% της τρέχουσας':''}`;
     }
   });

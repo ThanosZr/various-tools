@@ -145,3 +145,54 @@ test('cancelling fast out-of-order capture retains only the complete previous pa
     const scan=[...f.metadata.values()][0];assert.equal(scan.pages.length,1);assert.equal(scan.savedHeight,940);assert.deepEqual(scan.cuts,[0,940]);await equalPixels(f,scan,0);assert.equal(f.v.scroller.scrollTop,160);
   }finally{f.v.dispose();}
 });
+test('loading more document height below a stationary page does not prevent its first screenshot',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let height=f.v.scroller.scrollHeight;
+  Object.defineProperty(f.v.scroller,'scrollHeight',{configurable:true,get:()=>++height});
+  try{const scan=await capturePageWalk({...f,count:1});assert.equal(scan.pages.length,1);assert.equal(scan.performance.retries,0);assert.ok(f.shots.length>0);await equalPixels(f,scan,0);}
+  finally{f.v.dispose();}
+});
+test('tiny compositor-coordinate jitter in a toolbar does not count as unstable content',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let n=0;
+  f.v.bars[0].getBoundingClientRect=()=>({x:0,y:350+(++n%2)*.01,width:1000,height:38});
+  try{const scan=await capturePageWalk({...f,count:1});assert.equal(scan.performance.retries,0);await equalPixels(f,scan,0);}
+  finally{f.v.dispose();}
+});
+test('early discovery failures visibly retry and use temporary careful capture for the same page',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let failures=0;const progress=[],modes=[];
+  const command=async(op,extra)=>{if(op==='walk-next'&&failures++<2)throw Object.assign(new Error('not settled yet'),{code:'LAYOUT_CHANGED'});const r=await f.command(op,extra);if(r?.state==='page')modes.push(r.mode);return r;};
+  try{
+    const scan=await capturePageWalk({...f,count:2,command,onProgress:p=>{if(p.stage==='retry')progress.push(p);}});
+    assert.deepEqual(progress.map(p=>[p.attempt,p.phase,p.mode]),[[1,'search','fast'],[2,'search','careful']]);
+    assert.deepEqual(modes,['careful','fast']);assert.equal(scan.performance.retries,2);assert.equal(scan.performance.carefulFallbacks,1);assert.deepEqual(scan.pages.map(p=>p.label),['1','2']);
+    for(let i=0;i<2;i++)await equalPixels(f,scan,i);
+  }finally{f.v.dispose();}
+});
+test('permanent discovery instability stops only after four attempts and keeps the original position',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let attempts=0,retries=0;
+  const command=async(op,extra)=>{if(op==='walk-next'){attempts++;throw Object.assign(new Error('still moving'),{code:'LAYOUT_CHANGED'});}return f.command(op,extra);};
+  try{
+    await assert.rejects(()=>capturePageWalk({...f,count:1,command,onProgress:p=>{if(p.stage==='retry')retries++;}}),e=>e.code==='LAYOUT_CHANGED'&&e.attempts===4&&e.phase==='search'&&e.completedPages===0);
+    assert.equal(attempts,4);assert.equal(retries,3);assert.equal(f.shots.length,0);assert.equal(f.v.scroller.scrollTop,160);
+  }finally{f.v.dispose();}
+});
+test('a final validation failure is retried without committing the page twice',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let failed=false;
+  const command=async(op,extra)=>{if(op==='walk-commit'&&!failed){failed=true;throw Object.assign(new Error('bar moved before commit'),{code:'LAYOUT_CHANGED'});}return f.command(op,extra);};
+  try{const scan=await capturePageWalk({...f,count:1,command});assert.equal(scan.performance.retries,1);assert.equal(scan.pages.length,1);assert.deepEqual(scan.cuts,[0,940]);await equalPixels(f,scan,0);}
+  finally{f.v.dispose();}
+});
+test('a page shifted above its old discovery cursor is pinned during recovery instead of being skipped',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let shifted=false;const original=f.screenshot,rect=f.v.pages[0].getBoundingClientRect;
+  try{
+    const scan=await capturePageWalk({...f,count:2,screenshot:async()=>{const im=await original();if(!shifted){shifted=true;f.v.pages[0].getBoundingClientRect=()=>({...rect(),y:rect().y-12});}return im;}});
+    assert.deepEqual(scan.pages.map(p=>p.label),['1','2']);assert.equal(scan.performance.retries,1);for(let i=0;i<2;i++)await equalPixels(f,scan,i);
+  }finally{f.v.dispose();}
+});
+test('stopping during recovery cancels further attempts',async()=>{
+  const f=await setup();f.opts.walkSpeed='fast';let stopped=false,retries=0;
+  const command=async(op,extra)=>{if(op==='walk-next')throw Object.assign(new Error('not stable'),{code:'LAYOUT_CHANGED'});return f.command(op,extra);};
+  try{
+    await assert.rejects(()=>capturePageWalk({...f,count:1,command,checkStop:()=>{if(stopped)throw new Error('stopped');},onProgress:p=>{if(p.stage==='retry'){retries++;stopped=true;}}}),/stopped/);
+    assert.equal(retries,1);assert.equal(f.shots.length,0);assert.equal(f.v.scroller.scrollTop,160);
+  }finally{f.v.dispose();}
+});

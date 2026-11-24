@@ -44,9 +44,19 @@ try{
  const selection=await worker.evaluate(async url=>{const [t]=await chrome.tabs.query({url});return chrome.tabs.sendMessage(t.id,{scope:'readercapture',op:'selection'});},viewer.url());assert.equal(Math.round(selection.data.rect.width),660);assert.equal(Math.round(selection.data.rect.height),940);
  await worker.evaluate(async url=>{const [t]=await chrome.tabs.query({url});await chrome.tabs.setZoom(t.id,1);},viewer.url());await viewer.waitForTimeout(250);
  assert.equal(await panel.locator('#captureMethod').inputValue(),'pages');assert.equal(await panel.locator('#walkSpeed').inputValue(),'fast');await fill('walkCount','3');await fill('walkStep','140');await viewer.bringToFront();
+ // Reproduce the reported failure before the first screenshot: an initially
+ // moving toolbar, while unrelated content keeps extending the document below.
+ await viewer.evaluate(()=>{
+   const tail=document.createElement('div');tail.style.height='0px';document.body.append(tail);let height=0;
+   window.rcTailTimer=setInterval(()=>tail.style.height=(++height)+'px',10);
+   const bar=document.querySelector('[data-test-obstruction]').firstElementChild;let y=360;
+   const timer=setInterval(()=>bar.style.top=(y+=1.5)+'px',10);
+   setTimeout(()=>{clearInterval(timer);bar.style.top='360px';},650);
+ });
  const initialScroll=await viewer.evaluate(()=>{window.testScrollPositions=[];document.addEventListener('scroll',()=>window.testScrollPositions.push(scrollY));return scrollY;});
  const popupEvent=context.waitForEvent('page',{timeout:65000});await click('scanStart');await settled();const popup=await popupEvent;await popup.waitForURL(/splitter\.html/);popup.on('pageerror',e=>errors.push(e.message));await popup.locator('#scanInfo').filter({hasText:'660 × 2820'}).waitFor({timeout:60000});await settled();
  const metadata=await popup.evaluate(async()=>{const {getScan}=await import('./lib/scan-store.js');return getScan(new URL(location.href).searchParams.get('scan'));});assert.equal(metadata.status,'complete');assert.equal(metadata.savedHeight,2820);assert.equal(metadata.width,660);assert.equal(metadata.pages.length,3);assert.deepEqual(metadata.cuts,[0,940,1880,2820]);
+ await viewer.evaluate(()=>clearInterval(window.rcTailTimer));assert.ok(metadata.performance.retries>=1,'discovery must retry rather than failing before its first capture');assert.ok(metadata.performance.carefulFallbacks>=1,'persistent initial motion triggers temporary careful capture');
  const positions=[initialScroll,...await viewer.evaluate(()=>window.testScrollPositions)];assert.ok(positions.slice(1,-1).every((y,i)=>Math.abs(y-positions[i])<=1401),'fast travel respects the 10× step bound before returning to the reading position');
  assert.equal(metadata.performance.mode,'fast');assert.ok(metadata.tiles.some(t=>t.height>0));
  // Export a page from the stored strip and compare with a clean browser-rendered page.
@@ -59,5 +69,5 @@ try{
  const before=await viewer.evaluate(()=>scrollY);await popup.locator('#pageHeight').fill('940');await popup.locator('#pageGap').fill('0');await popup.locator('#regular').click();assert.match(await popup.locator('#pageCount').textContent(),/3 σελίδες/);
  const pdfEvent=popup.waitForEvent('download',{timeout:45000});await popup.locator('#exportPdf').click();const pdf=await pdfEvent;await pdf.saveAs(path.join(output,'split-export.pdf'));assert.equal(await viewer.evaluate(()=>scrollY),before,'export does not scroll source tab');
  const pngEvent=popup.waitForEvent('download',{timeout:45000});await popup.locator('#exportPng').click();const png=await pngEvent;await png.saveAs(path.join(output,'long.png'));const pngBytes=await readFile(path.join(output,'long.png'));assert.equal(pngBytes.readUInt32BE(16),660);assert.equal(pngBytes.readUInt32BE(20),2820);
- assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,checks:['real pointer drawing','edge scrolling','visual spacing','Chrome zoom','unnamed fixed-wrapper toolbar exclusion','incremental page discovery and capture','exact page boundaries without gaps','popup splitter','pixel equality','PDF export without source scrolling','single PNG export'],pageErrors:errors},null,2));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,retries:metadata.performance.retries,carefulFallbacks:metadata.performance.carefulFallbacks,checks:['real pointer drawing','edge scrolling','visual spacing','Chrome zoom','initial discovery instability recovery','continuously growing document height','temporary careful fallback','unnamed fixed-wrapper toolbar exclusion','incremental page discovery and capture','exact page boundaries without gaps','popup splitter','pixel equality','PDF export without source scrolling','single PNG export'],pageErrors:errors},null,2));
 }finally{await context?.close();await new Promise(r=>server.close(r));await rm(temp,{recursive:true,force:true});}

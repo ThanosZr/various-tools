@@ -16,21 +16,24 @@ export async function capturePageWalk({command,screenshot,opts={},count=10,check
   let started=false,scan,steps=0,reason='count';const began=Date.now(),fast=opts.walkSpeed!=='careful';
   try{
     const initial=await command('begin-walk',{opts});started=true;
-    scan={id:crypto.randomUUID(),version:1,mode:'pages',title:initial.title||'Έγγραφο',sourceUrl:initial.url,created:new Date().toISOString(),status:'capturing',width:0,height:0,savedHeight:0,tiles:[],pages:[],cuts:[0],settings:{pageHeight:0,pageGap:0},performance:{mode:fast?'fast':'careful',frames:0,elapsedMs:0}};
+    scan={id:crypto.randomUUID(),version:1,mode:'pages',title:initial.title||'Έγγραφο',sourceUrl:initial.url,created:new Date().toISOString(),status:'capturing',width:0,height:0,savedHeight:0,tiles:[],pages:[],cuts:[0],settings:{pageHeight:0,pageGap:0},performance:{mode:fast?'fast':'careful',frames:0,elapsedMs:0,retries:0,carefulFallbacks:0}};
     await save(scan);onSaved(scan);
     while(scan.pages.length<count){
       let retries=0,completed=false;
       while(!completed){
-        checkStop();let page;
-        for(;;){
-          if(++steps>30000)throw new Error('Έφτασε το όριο βημάτων. Διάλεξε μικρότερο εύρος.');
-          checkStop();page=await command('walk-next');
-          if(page.state==='page'||page.state==='end')break;
-          onProgress({stage:page.state==='loading'?'loading':'search',completed:scan.pages.length,total:count,steps:page.steps});
-        }
-        if(page.state==='end'){reason='end';completed=true;break;}
+        checkStop();let page,phase='search';
         const tiles=[],jobs=[],pending=new Set();let covered=0,pixelHeight=0,pagePixels=null,scaleY=1;
         try{
+          // Discovery and initial scrolling can fail before there is a bitmap.
+          // They need the same bounded recovery as capture and final validation.
+          for(;;){
+            if(++steps>30000)throw new Error('Έφτασε το όριο βημάτων. Διάλεξε μικρότερο εύρος.');
+            checkStop();page=await command('walk-next');
+            if(page.state==='page'||page.state==='end')break;
+            onProgress({stage:page.state==='loading'?'loading':'search',completed:scan.pages.length,total:count,steps:page.steps});
+          }
+          if(page.state==='end'){reason='end';completed=true;break;}
+          phase='capture';
           for(let n=0;pagePixels===null||pixelHeight<pagePixels;n++){
             if(n>=10000)throw new Error('Η σελίδα χρειάζεται υπερβολικά πολλά τμήματα.');checkStop();
             const m=await command('move',{covered,known:fast?tiles.map(t=>({top:t.pageTop/scaleY,bottom:(t.pageTop+t.height)/scaleY})):[]});
@@ -60,12 +63,19 @@ export async function capturePageWalk({command,screenshot,opts={},count=10,check
             onProgress({stage:'capture',completed:scan.pages.length,total:count,fraction:tiles.reduce((n,t)=>n+t.height,0)/pagePixels,tiles:tiles.length,frames:scan.performance.frames});
           }
           await Promise.all(jobs);tiles.sort((a,b)=>a.y-b.y);
+          phase='commit';checkStop();await command('walk-commit');
         }catch(error){
           await Promise.allSettled(jobs);
-          if(['LAYOUT_CHANGED','OCCLUDED'].includes(error.code)&&retries++<3){await command('walk-retry');onProgress({stage:'retry',completed:scan.pages.length,total:count});continue;}
+          checkStop();
+          if(['LAYOUT_CHANGED','OCCLUDED'].includes(error.code)&&retries<3){
+            const recovery=await command('walk-retry',{attempt:++retries,phase});scan.performance.retries++;
+            if(fast&&recovery?.mode==='careful')scan.performance.carefulFallbacks++;
+            if(!scan.pages.length)scan.width=0;
+            onProgress({stage:'retry',completed:scan.pages.length,total:count,attempt:retries,maxRetries:3,phase,mode:recovery?.mode||'careful',wait:recovery?.wait});continue;
+          }
+          error.phase=phase;error.attempts=retries+1;
           throw error;
         }
-        checkStop();await command('walk-commit');
         const record={number:scan.pages.length+1,label:page.label||String(scan.pages.length+1),top:scan.savedHeight,bottom:scan.savedHeight+pixelHeight};
         await commit(scan,tiles,record);onSaved(scan);completed=true;
         onProgress({stage:'saved',completed:scan.pages.length,total:count,savedHeight:scan.savedHeight});
@@ -75,7 +85,7 @@ export async function capturePageWalk({command,screenshot,opts={},count=10,check
     scan.reason=reason;scan.status='complete';scan.pageHeight=scan.pages[0]?scan.pages[0].bottom-scan.pages[0].top:0;scan.step=scan.pageHeight;scan.performance.elapsedMs=Date.now()-began;
     await save(scan);return scan;
   }catch(error){
-    if(scan){scan.status=scan.pages.length?'partial':'failed';scan.error=error.message;await save(scan).catch(()=>{});error.completedPages=scan.pages.length;error.scanId=scan.id;}
+    if(scan){scan.status=scan.pages.length?'partial':'failed';scan.error=error.message;scan.performance.elapsedMs=Date.now()-began;await save(scan).catch(()=>{});error.completedPages=scan.pages.length;error.scanId=scan.id;}
     throw error;
   }finally{if(started)await command('end-walk',{restore:opts.returnPosition!==false}).catch(()=>{});}
 }

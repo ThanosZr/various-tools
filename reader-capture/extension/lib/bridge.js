@@ -1,4 +1,4 @@
-export const VERSION='0.4.0';
+export const VERSION='0.4.1';
 export function friendlyError(error){
   const text=error?.message||String(error);
   if(/context invalidated|Extension context/i.test(text))return 'Η επέκταση ανανεώθηκε. Κλείσε το παλιό πάνελ, ανανέωσε το έγγραφο και πάτησε ξανά το εικονίδιο ReaderCapture.';
@@ -24,7 +24,7 @@ export class PageBridge{
   }
   async call(op,extra={},target){
     if(!Number.isInteger(target?.id))throw new Error('Δεν συνδέθηκε ακόμη το έγγραφο. Πάτησε το εικονίδιο ReaderCapture.');let timer;
-    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error('Ο viewer δεν απάντησε. Ανανέωσε το έγγραφο και πάτησε το εικονίδιο ReaderCapture.'),{code:'VIEWER_TIMEOUT'})),['prepare','goto'].includes(op)?25000:12000);});
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error('Ο viewer δεν απάντησε. Ανανέωσε το έγγραφο και πάτησε το εικονίδιο ReaderCapture.'),{code:'VIEWER_TIMEOUT'})),['prepare','goto','walk-next','move'].includes(op)?25000:12000);});
     try{const r=await Promise.race([this.api.tabs.sendMessage(target.id,{scope:'readercapture',op,...extra}),timeout]);if(!r?.ok)throw Object.assign(new Error(r?.error||'Δεν απάντησε το έγγραφο.'),{code:r?.code||'VIEWER_ERROR'});return r.data;}finally{clearTimeout(timer);}
   }
 }
