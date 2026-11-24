@@ -47,10 +47,30 @@
     }
     return bands.filter(b=>b.height>=60).sort((a,b)=>a.y-b.y);
   }
-  async function moveToCovered(covered,opts){
+  function usefulPlans(plans,m,bands,covered,known,max,root){
+    const sorted=known.filter(r=>Number.isFinite(r.top)&&Number.isFinite(r.bottom)&&r.bottom>r.top).sort((a,b)=>a.top-b.top),missing=[];let next=0;
+    for(const r of sorted){if(r.top>next)missing.push({top:next,bottom:Math.min(r.top,m.rect.height)});next=Math.max(next,r.bottom);}if(next<m.rect.height)missing.push({top:next,bottom:m.rect.height});
+    const choices=new Map(plans.map(p=>[p.scrollTop,{...p,preferred:true}]));choices.set(root.scrollTop,{scrollTop:root.scrollTop});
+    for(const gap of missing.slice(0,12))for(const band of bands){
+      for(const goal of [root.scrollTop+m.rect.y+gap.top-band.y-2,root.scrollTop+m.rect.y+gap.bottom-band.y-band.height+2]){
+        const scrollTop=clamp(goal,0,max);if(!choices.has(scrollTop))choices.set(scrollTop,{scrollTop});
+      }
+    }
+    const scored=[];
+    for(const p of choices.values()){
+      const y=m.rect.y-(p.scrollTop-root.scrollTop),line=y+covered;
+      const band=bands.find(b=>line>=b.y+1&&line<b.y+b.height-1);if(!band)continue;
+      let useful=0;
+      for(const b of bands)for(const gap of missing){const start=Math.max(gap.top,b.y-y,0),end=Math.min(gap.bottom,b.y+b.height-y,m.rect.height);useful+=Math.max(0,end-start);}
+      if(useful>.01)scored.push({...p,band,useful,fresh:Math.min(band.y+band.height-line,m.rect.height-covered)});
+    }
+    return scored.sort((a,b)=>b.useful-a.useful||Number(!!b.preferred)-Number(!!a.preferred)||Math.abs(a.scrollTop-root.scrollTop)-Math.abs(b.scrollTop-root.scrollTop));
+  }
+  async function moveToCovered(covered,opts,known=[]){
     for(let attempt=0;attempt<4;attempt++){
       const m=currentCapture(),s=capture,t=s.target,root=t.root,bands=bandsFor({...t,rect:m.rect},s.opts),max=Math.max(0,root.scrollHeight-root.clientHeight),line=m.rect.y+covered;
-      const plans=bands.map(b=>{const fits=walk&&covered===0&&t.rect.height<=b.height-16,pad=fits?(b.height-t.rect.height)/2:Math.min(24,b.height/8),scrollTop=clamp(root.scrollTop+line-b.y-pad,0,max),y=line-(scrollTop-root.scrollTop);return {band:b,scrollTop,y,fresh:Math.min(b.y+b.height-y,t.rect.height-covered)};}).filter(p=>p.y>=p.band.y-.5&&p.y<p.band.y+p.band.height-.5&&p.fresh>.1).sort((a,b)=>b.fresh-a.fresh);
+      let plans=bands.map(b=>{const fits=walk&&covered===0&&t.rect.height<=b.height-16,pad=fits?(b.height-t.rect.height)/2:Math.min(24,b.height/8),scrollTop=clamp(root.scrollTop+line-b.y-pad,0,max),y=line-(scrollTop-root.scrollTop);return {band:b,scrollTop,y,fresh:Math.min(b.y+b.height-y,t.rect.height-covered)};}).filter(p=>p.y>=p.band.y-.5&&p.y<p.band.y+p.band.height-.5&&p.fresh>.1).sort((a,b)=>b.fresh-a.fresh);
+      if(walk?.fast)plans=usefulPlans(plans,m,bands,covered,known,max,root);
       if(!plans.length)throw fail('Η επόμενη γραμμή καλύπτεται από μπάρα. Διόρθωσε τα περιθώρια ή τα όρια του εύρους.','OCCLUDED');
       const plan=plans[0];
       if(walk&&Math.abs(plan.scrollTop-root.scrollTop)>walk.step+.5){await walkScroll(root.scrollTop+Math.sign(plan.scrollTop-root.scrollTop)*walk.step);return {pending:true};}
@@ -355,7 +375,7 @@
     if(op==='prepare')return prepare(message.index,opts);
     if(op==='goto'){const m=await prepare(message.index,opts);repaint();return m;}
     if(op==='begin'){if(walk||strip)throw fail('Υπάρχει ήδη λήψη σε εξέλιξη.');endCapture(!run);if(gesture)throw fail('Ολοκλήρωσε πρώτα τη σχεδίαση.');const t=getTarget(opts);if(run?.cancelled)throw fail('Η λήψη διακόπηκε.','USER_INTERRUPTED');capture={target:t,rect:{...t.rect},left:t.root.scrollLeft,top:t.root.scrollTop,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,opts,cancelled:false,position:rememberPosition(t.root)};capture.timer=setTimeout(()=>endCapture(!run),120000);hideOverlay(true);return currentCapture();}
-    if(op==='move'){if(capture)capture.band=null;return moveToCovered(message.covered,opts);}
+    if(op==='move'){if(capture)capture.band=null;return moveToCovered(message.covered,opts,message.known||[]);}
     if(op==='metrics')return currentCapture();
     if(op==='end')return endCapture(message.restore!==false&&!run);
     if(op==='next'){

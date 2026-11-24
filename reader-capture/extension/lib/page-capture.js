@@ -29,18 +29,18 @@ export async function capturePageWalk({command,screenshot,opts={},count=10,check
           onProgress({stage:page.state==='loading'?'loading':'search',completed:scan.pages.length,total:count,steps:page.steps});
         }
         if(page.state==='end'){reason='end';completed=true;break;}
-        const tiles=[],jobs=[],pending=new Set();let covered=0,pixelHeight=0,pagePixels=null;
+        const tiles=[],jobs=[],pending=new Set();let covered=0,pixelHeight=0,pagePixels=null,scaleY=1;
         try{
           for(let n=0;pagePixels===null||pixelHeight<pagePixels;n++){
             if(n>=10000)throw new Error('Η σελίδα χρειάζεται υπερβολικά πολλά τμήματα.');checkStop();
-            const m=await command('move',{covered});
+            const m=await command('move',{covered,known:fast?tiles.map(t=>({top:t.pageTop/scaleY,bottom:(t.pageTop+t.height)/scaleY})):[]});
             if(m.pending){onProgress({stage:'center',completed:scan.pages.length,total:count});continue;}
             if(m.url!==initial.url)throw new Error('Άλλαξε το έγγραφο κατά τη λήψη.');
             const im=await screenshot(m);scan.performance.frames++;
             try{
               checkStop();const after=await command('metrics');
               if(!unchanged(m,after))throw Object.assign(new Error('Η προβολή κινήθηκε την ώρα του capture. Η ίδια σελίδα θα επαναληφθεί.'),{code:'LAYOUT_CHANGED'});
-              const plan=snapshotSlices(m,im,tiles.map(t=>({top:t.pageTop,bottom:t.pageTop+t.height})),fast),{width,height,sy}=plan;
+              const plan=snapshotSlices(m,im,tiles.map(t=>({top:t.pageTop,bottom:t.pageTop+t.height})),fast),{width,height,sy}=plan;scaleY=sy;
               if(!scan.width)scan.width=width;
               if(width!==scan.width)throw new Error('Άλλαξε το πλάτος των σελίδων. Κράτησε τις διαφορετικές διαστάσεις σε ξεχωριστή λήψη.');
               if(pagePixels!==null&&pagePixels!==height)throw Object.assign(new Error('Άλλαξε η ανάλυση της σελίδας.'),{code:'VIEWPORT_CHANGED'});pagePixels=height;
