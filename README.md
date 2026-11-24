@@ -6,7 +6,7 @@ A collection of practical tools and utilities for documents, automation, enginee
 
 | Tool | Version | Description | Download |
 | --- | --- | --- | --- |
-| ReaderCapture | [0.4](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.4/reader-capture) | Fast snapshots with saved positions, capture of all unoccluded bands, precise page merging and the existing PDF/image exports. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.4.zip) |
+| ReaderCapture | [0.4.1](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.4/reader-capture) | Fast positioned snapshots, precise page merging and automatic retries for temporary viewer instability. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.4.zip) |
 | ReaderCapture archive | [0.3](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.3/reader-capture) | Incremental page capture with careful scrolling and sticky-bar checks. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.3.zip) |
 | ReaderCapture archive | [0.2](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.2/reader-capture) | Continuous document capture with a separate page splitter. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.2.zip) |
 | ReaderCapture archive | [0.1](https://github.com/ThanosZr/various-tools/tree/reader-capture/v0.1/reader-capture) | Previous page-by-page capture and visual calibration. | [ZIP](https://github.com/ThanosZr/various-tools/archive/refs/heads/reader-capture/v0.1.zip) |
